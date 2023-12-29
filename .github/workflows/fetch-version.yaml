@@ -55,4 +55,4 @@ jobs:
                 git config --global user.email "minecraft@prometheuzdy.cloud"
                 git add versions.json
                 git commit -m "Update versions.json"
-                git push https://${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+                git push https://WasinUddy:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:main
