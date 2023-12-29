@@ -49,10 +49,9 @@ jobs:
               shell: bash
 
             - name: Commit and Push Changes
-              if: env.changes_detected == 'true'
-              run: |
-                git config --global user.name "Minecraft Version Check"
-                git config --global user.email "minecraft@prometheuzdy.cloud"
-                git add versions.json
-                git commit -m "Update versions.json"
-                git push https://WasinUddy:${{ secrets.GIT_TOKEN }}@github.com/${{ github.repository }} HEAD:main
+              uses: EndBug/add-and-commit@v9
+              with:
+                  message: "Update versions.json"
+                  default_author: github_actions
+
+            
