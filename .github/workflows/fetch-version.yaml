@@ -1,0 +1,58 @@
+name: Fetch Version
+
+on:
+    schedule:
+        - cron: '0 0 * * *' # every day at midnight
+    workflow_dispatch:
+
+jobs:
+    fetch-version:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout from the GitHub repository
+              uses: actions/checkout@v3
+            
+            - name: Set up Python 3.11
+              uses: actions/setup-python@v4
+              with:
+                  python-version: 3.11
+            
+            - name: Setup Chromium and Dependencies
+              run: |
+                sudo apt purge --remove google-chrome-stable -y
+                sudo apt purge --remove chromium-browser -y
+                sudo apt autoremove && sudo apt autoclean -y
+                sudo rm -rf /usr/bin/chromium
+                sudo apt install chromium-browser -y
+                chromium-browser --product-version
+                pip install selenium
+            
+            - name: Execute Python Script to Fetch Version from Mojang
+              run: |
+                python scripts/fetch_version.py | while IFS='=' read -r key value; do
+                    if [ -n "$key" ] && [ -n "$value" ]; then
+                        echo "$key=$value" >> $GITHUB_ENV
+                    fi
+                done
+
+            - name: Create JSON file to store fetched version
+              run: |
+                echo "{\"stable\": \"$STABLE_VERSION\", \"preview\": \"$PREVIEW_VERSION\"}" > versions.json
+          
+            - name: Check for changes from the current version
+              run: |
+                if git diff --exit-code; then
+                echo "No changes detected."
+                else
+                echo "changes_detected=true" >> $GITHUB_ENV
+                fi
+              shell: bash
+
+            - name: Commit and Push Changes
+              if: env.changes_detected == 'true'
+              run: |
+                git config --global user.name "Minecraft Version Check"
+                git config --global user.email "minecraft@prometheuzdy.cloud"
+                git add versions.json
+                git commit -m "Update versions.json"
+                git push
