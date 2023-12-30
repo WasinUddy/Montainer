@@ -54,7 +54,7 @@ jobs:
 
             - name: Build Frontend
               run: |
-                cd frontend
+                cd webui/frontend
                 npm install
                 npm run build
 
