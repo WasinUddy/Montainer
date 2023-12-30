@@ -1,0 +1,27 @@
+FROM python:3.11-slim
+
+# Image Label
+LABEL org.opencontainers.image.source https://github.com/wasinuddy/montainer
+
+# Set a working directory
+WORKDIR /minecraft
+
+# Install Dependencies for downloading and executing minecraft-bedrock-server
+RUN apt-get update && apt-get install -y wget unzip libcurl4
+
+# Install python dependencies
+COPY requirements.txt requirements.txt
+RUN pip3 install -r requirements.txt
+
+# Copy minecraft-bedrock-server downloader script
+COPY versions.json scripts/versions.json
+COPY scripts/server_downloader.py scripts/server_downloader.py
+RUN mkdir tmp
+
+# Copy webserver
+RUN mkdir webserver
+COPY webui/backend webserver
+
+# RUN Webserver
+ENTRYPOINT [ "python3", "webserver/main.py" ]
+
