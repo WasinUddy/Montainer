@@ -68,10 +68,7 @@ if __name__ == "__main__":
     # if minecraft server is not downloaded, download it
     if not os.path.exists("/minecraft/bedrock_server"):
         print("Server not found, downloading...")
-        try:
-            server_type = os.environ['SERVER_TYPE']
-        except KeyError:
-            server_type = "stable"
+        server_type = os.environ.get('SERVER_TYPE', 'stable')
         os.system(f"python3 /minecraft/scripts/server_downloader.py --type {server_type}")
         
     # Initially start the server
