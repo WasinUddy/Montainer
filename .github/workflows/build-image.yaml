@@ -71,6 +71,10 @@ jobs:
             - name: "Get Stable Version"
               id: get_stable_version
               run: echo "STABLE_VERSION=$(jq -r '.stable' versions.json)" >> $GITHUB_ENV
+      
+            - name: "Get Preview Version"
+              id: get_preview_version
+              run: echo "PREVIEW_VERSION=$(jq -r '.preview' versions.json)" >> $GITHUB_ENV
 
             - name: Build and Push Image
               uses: docker/build-push-action@v4
@@ -80,7 +84,7 @@ jobs:
                 push: true
                 tags: |
                     ghcr.io/wasinuddy/montainer:latest
-                    ghcr.io/wasinuddy/montainer:${{ env.STABLE_VERSION }}
+                    ghcr.io/wasinuddy/montainer:${{ env.STABLE_VERSION }}-${{ env.PREVIEW_VERSION }}
                 platforms: linux/amd64
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
