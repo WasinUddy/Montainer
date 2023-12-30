@@ -1,22 +1,32 @@
 import os
+import json
 import argparse
 
+
 def main():
+    # Load versions file
+    with open('/minecraft/scripts/versions.json') as f:
+        versions = json.load(f)
+
+
     parser = argparse.ArgumentParser(description='Download Minecraft Bedrock Server from Mojang server.')
     parser.add_argument('--type', type=str, help='Specify the server type (stable or preview).')
-    parser.add_argument('--version', type=str, help='Specify the server version.')
+
     args = parser.parse_args()
 
     if args.type=='stable':
-        url = f'https://minecraft.azureedge.net/bin-linux/bedrock-server-{args.version}.zip'
-    elif args.type=='preview':
-        url = f'https://minecraft.azureedge.net/bin-linux-preview/bedrock-server-{args.version}.zip'
+        url = f'https://minecraft.azureedge.net/bin-linux/bedrock-server-{versions["stable"]}.zip'
     else:
-        raise ValueError(f'Invalid server type error type must be stable or preview got {args.version}.')
+        url = f'https://minecraft.azureedge.net/bin-linux-preview/bedrock-server-{versions["preview"]}.zip'
+    
 
     print(f'Downloading {url}...')
-    os.system("wget -O bedrock-server.zip " + url)
-
+    os.system("wget -O /minecraft/tmp/bedrock-server.zip " + url)
+    print('Extracting...')
+    os.system("unzip /minecraft/tmp/bedrock-server.zip -d /minecraft/minecraft_server")
+    print('Cleaning up...')
+    os.system("rm /minecraft/tmp/bedrock-server.zip")
+    
 
 if __name__ == '__main__':
     main()
