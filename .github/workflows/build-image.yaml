@@ -84,7 +84,8 @@ jobs:
                 push: true
                 tags: |
                     ghcr.io/wasinuddy/montainer:latest
-                    ghcr.io/wasinuddy/montainer:${{ env.STABLE_VERSION }}-${{ env.PREVIEW_VERSION }}
+                    ghcr.io/wasinuddy/montainer:${{ env.STABLE_VERSION }}
+                    
                 platforms: linux/amd64
                 cache-from: type=gha
                 cache-to: type=gha,mode=max
