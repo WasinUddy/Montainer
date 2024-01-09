@@ -21,6 +21,9 @@ RUN mkdir tmp
 # Copy Server into container
 COPY minecraft_server/ /minecraft/minecraft_server
 
+EXPOSE 19132/tcp
+EXPOSE 8000
+
 # Copy webserver
 RUN mkdir webserver
 COPY webui/backend webserver
