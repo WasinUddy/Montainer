@@ -5,11 +5,27 @@ import Terminal from "./terminal/terminal.jsx";
 const App = () => {
   const [initialLogData, setInitialLogData] = useState('');
 
+  // Dynamically determine the base URL
+  const getBaseUrl = () => {
+    const { protocol, hostname, pathname } = window.location;
+    const pathSegments = pathname.split('/').filter(segment => segment);
+    
+    // Remove the last path segment if it's not a base path (like 'wallmaria')
+    // Adjust this logic as needed for your specific URL structure
+    if (pathSegments.length > 1) {
+      pathSegments.pop();
+    }
+    
+    return `${protocol}//${hostname}/${pathSegments.join('/')}`;
+  };
+
+  const baseUrl = getBaseUrl();
+
   // Fetch initial log data on component mount
   useEffect(() => {
     const fetchLogData = async () => {
       try {
-        const res = await fetch("/log");
+        const res = await fetch(`${baseUrl}/log`);
         const data = await res.json();
         setInitialLogData(data.log.split("\n").slice(-30).join("\n"));
       } catch (error) {
@@ -18,15 +34,15 @@ const App = () => {
     };
 
     fetchLogData();
-  }, []);
+  }, [baseUrl]);
 
   const handleServerAction = async (action) => {
     try {
-      const response = await fetch(`/${action}`, { method: 'POST' });
+      const response = await fetch(`${baseUrl}/${action}`, { method: 'POST' });
       const data = await response.json();
       console.log(data);
     } catch (error) {
-      console.error(`Failed to ${action} the server:`, error);
+console.error(`Failed to ${action} the server:`, error);
     }
   };
 
