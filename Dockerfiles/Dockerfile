@@ -17,6 +17,8 @@ RUN pip3 install -r requirements.txt
 COPY versions.json versions.json
 COPY scripts/server_downloader.py scripts/server_downloader.py
 
+EXPOSE 19132/udp
+EXPOSE 8000
 
 # Copy webserver
 RUN mkdir webserver
