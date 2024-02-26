@@ -1,0 +1,65 @@
+name: Fetch Minecraft Server Version
+
+# This workflow is triggered daily and can also be manually triggered
+on:
+    schedule:
+        - cron: '0 0 * * *' # Scheduled to run every day at midnight
+    workflow_dispatch: # Allows manual triggering of the workflow
+
+jobs:
+    fetch-version:
+        runs-on: ubuntu-latest
+        steps:
+            # Checkout the code from the GitHub repository
+            - name: Checkout Code
+              uses: actions/checkout@v3
+              with:
+                token: ${{ secrets.PAT }}
+
+            # Setup Python environment
+            - name: Setup Python Environment
+              uses: actions/setup-python@v4
+              with:
+                python-version: 3.11
+
+            # Install Chromium and necessary dependencies
+            - name: Install Chromium and Dependencies
+              run: |
+                sudo apt purge --remove google-chrome-stable -y
+                sudo apt purge --remove chromium-browser -y
+                sudo apt autoremove && sudo apt autoclean -y
+                sudo rm -rf /usr/bin/chromium
+                sudo apt install chromium-browser -y
+                chromium-browser --product-version
+                pip install selenium
+
+            # Execute Python script to fetch the latest Minecraft server version
+            - name: Fetch Minecraft Server Version
+              run: |
+                python scripts/fetch_version.py | while IFS='=' read -r key value; do
+                    if [ -n "$key" ] && [ -n "$value" ]; then
+                        echo "$key=$value" >> $GITHUB_ENV
+                    fi
+                done
+
+            # Create a JSON file to store the fetched version
+            - name: Store Fetched Version
+              run: |
+                echo "{\"stable\": \"$STABLE_VERSION\", \"preview\": \"$PREVIEW_VERSION\"}" > versions.json
+
+            # Check if the fetched version is different from the current version
+            - name: Check for Version Changes
+              run: |
+                if git diff --exit-code; then
+                echo "No changes detected."
+                else
+                echo "changes_detected=true" >> $GITHUB_ENV
+                fi
+              shell: bash
+
+            # Commit and push the changes if any
+            - name: Commit and Push Version Changes
+              uses: EndBug/add-and-commit@v9
+              with:
+                  message: "Update versions.json with latest Minecraft server versions"
+                  default_author: github_actions
