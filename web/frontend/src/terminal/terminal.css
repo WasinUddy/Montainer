@@ -1,0 +1,42 @@
+*, *::before, *::after {
+    box-sizing: border-box;
+}
+
+.terminal-container {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.terminal-output {
+    font-family: monospace;
+    font-size: 12px;
+    line-height: 1.5;
+    color: #fff;
+    background-color: #000;
+    padding: 10px;
+    margin: 0px;
+    overflow: auto;
+    height: 550px; /* Height for 30 lines */
+    width: 900px;
+    box-sizing: border-box;
+    overflow-x: hidden;
+}
+
+input {
+    font-family: monospace;
+    width: 900px;
+    font-size: 24px;
+    line-height: 1.5;
+    border: none;
+    outline: none;
+    padding: 0; 
+    margin: 0; 
+    background-color: #100043;
+    color: #fff;
+    border-radius: 0; 
+}
+
+input::placeholder {
+    color: #fff;
+}
