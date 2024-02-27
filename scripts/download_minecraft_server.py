@@ -31,6 +31,10 @@ def main():
         with zipfile.ZipFile(io.BytesIO(response.content)) as z:
             z.extractall(os.path.join(path, "minecraft_server"))
 
+        print("Setting permissions...")
+        os.chmod(os.path.join(path, "minecraft_server", "bedrock_server"), 0o777)
+
+
         print("Done.")
     else:
         print(f"Invalid server type: {args.type}. Please specify 'stable' or 'preview'.")
