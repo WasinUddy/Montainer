@@ -10,7 +10,7 @@ import os
 app = FastAPI()
 
 # Mount static files directory
-app.mount("/static", StaticFiles(directory="/app/webserver/build/static"), name="static")
+app.mount("/static", StaticFiles(directory="/app/webui/build/static"), name="static")
 
 # Enable CORS for all origins, methods and headers
 app.add_middleware(
@@ -27,7 +27,7 @@ minecraft_server = Server(cwd="/app/minecraft_server")
 @app.get("/")
 def get_index():
     # Serve the index.html file
-    return FileResponse("/app/webserver/build/index.html")
+    return FileResponse("/app/webui/build/index.html")
 
 @app.post("/start")
 def start_server():
@@ -76,7 +76,9 @@ if __name__ == "__main__":
     if not os.path.exists("/app/minecraft_server"):
         print("Server not found, downloading...")
         server_type = os.environ.get('SERVER_TYPE', 'stable')
-        os.system(f"python3 /app/scripts/server_downloader.py --type {server_type}")
+        os.system(f"python3 /app/scripts/download_minecraft_server.py --type {server_type}")
+
+
         
     # Start the Minecraft server
     start_server()
