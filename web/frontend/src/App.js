@@ -8,17 +8,21 @@ const App = () => {
 
   // Dynamically determine the base URL
   const getBaseUrl = () => {
-    const { protocol, hostname, pathname } = window.location;
+    const { protocol, hostname, port, pathname } = window.location;
     const pathSegments = pathname.split('/').filter(segment => segment);
-    
-    // Remove the last path segment if it's not a base path (like 'wallmaria')
-    // Adjust this logic as needed for your specific URL structure
-    if (pathSegments.length > 1) {
-      pathSegments.pop();
+  
+    // Construct the base path from the segments, if any exist
+    let basePath = '';
+    if (pathSegments.length > 0) {
+      basePath = '/' + pathSegments.join('/');
     }
-    
-    return `${protocol}//${hostname}`;
+  
+    // Include the port if it's non-standard
+    const portPart = port && `:${port}` || '';
+  
+    return `${protocol}//${hostname}${portPart}${basePath}`;
   };
+  
 
   const baseUrl = getBaseUrl();
 
