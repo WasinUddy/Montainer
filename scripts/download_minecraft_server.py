@@ -13,7 +13,7 @@ def main():
     args = parser.parse_args()
 
     # Set Path
-    path = args.path if args.path else "/minecraft"
+    path = args.path if args.path else "/app"
 
     # Load versions file
     with open(os.path.join(path, "versions.json")) as f:
