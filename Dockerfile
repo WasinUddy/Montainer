@@ -17,13 +17,13 @@ RUN pip3 install -r requirements.txt
 COPY versions.json versions.json
 COPY scripts/download_minecraft_server.py scripts/download_minecraft_server.py
 
-# Export the port
+# Expose the port
 EXPOSE 19132/udp
 EXPOSE 8000
 
 # Copy webui
-RUN mkdir webui
-COPY web/backend webui
+RUN mkdir web
+COPY web/backend web
 
 
-ENTRYPOINT [ "python3", "webui/main.py" ]
+ENTRYPOINT [ "python3", "web/main.py" ]

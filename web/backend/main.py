@@ -10,7 +10,7 @@ import os
 app = FastAPI()
 
 # Mount static files directory
-app.mount("/static", StaticFiles(directory="/app/webui/build/static"), name="static")
+app.mount("/static", StaticFiles(directory="/app/web/build/static"), name="static")
 
 # Enable CORS for all origins, methods and headers
 app.add_middleware(
@@ -27,7 +27,7 @@ minecraft_server = Server(cwd="/app/minecraft_server")
 @app.get("/")
 def get_index():
     # Serve the index.html file
-    return FileResponse("/app/webui/build/index.html")
+    return FileResponse("/app/web/build/index.html")
 
 @app.post("/start")
 def start_server():
