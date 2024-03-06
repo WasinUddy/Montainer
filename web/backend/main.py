@@ -72,14 +72,6 @@ def get_log():
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # If the Minecraft server is not downloaded, download it
-    if not os.path.exists("/app/minecraft_server"):
-        print("Server not found, downloading...")
-        server_type = os.environ.get('SERVER_TYPE', 'stable')
-        os.system(f"python3 /app/scripts/download_minecraft_server.py --type {server_type}")
-
-
-        
     # Start the Minecraft server
     start_server()
 
