@@ -50,7 +50,7 @@ jobs:
               uses: EndBug/add-and-commit@v9
               with:
                 add: 'versions/stable.txt'
-                message: "Update stable version to $STABLE_VERSION"
+                message: "Update stable version"
                 default_author: github_actions
 
             # Store the fetched preview version and commit the changes to the repository
@@ -61,7 +61,7 @@ jobs:
               uses: EndBug/add-and-commit@v9
               with:
                 add: 'versions/preview.txt'
-                message: "Update preview version to $PREVIEW_VERSION"
+                message: "Update preview version"
                 default_author: github_actions
 
             
