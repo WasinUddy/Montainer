@@ -42,28 +42,29 @@ jobs:
                     fi
                 done
 
-            # Store the fetched stable version and commit the changes
-            - name: Store Fetched Stable Version and Commit Changes
+            # Store the fetched stable version and commit the changes to the repository
+            - name: Store Fetched Stable Version
               run: |
                 echo $STABLE_VERSION > versions/stable.txt
-                if git diff --exit-code; then
-                  echo "No changes detected in stable version."
-                else
-                  git add versions/stable.txt
-                  git commit -m "Update stable version with latest Minecraft server version"
-                  git push
-                fi
-              shell: bash
+            - name: Commit and Push Stable Changes
+              uses: EndBug/add-and-commit@v9
+              with:
+                add: 'versions/stable.txt'
+                message: "Update stable version to $STABLE_VERSION"
+                default_author: github_actions
 
-            # Store the fetched preview version and commit the changes
-            - name: Store Fetched Preview Version and Commit Changes
+            # Store the fetched preview version and commit the changes to the repository
+            - name: Store Fetched Preview Version
               run: |
                 echo $PREVIEW_VERSION > versions/preview.txt
-                if git diff --exit-code; then
-                  echo "No changes detected in preview version."
-                else
-                  git add versions/preview.txt
-                  git commit -m "Update preview version with latest Minecraft server version"
-                  git push
-                fi
-              shell: bash
+            - name: Commit and Push Preview Changes
+              uses: EndBug/add-and-commit@v9
+              with:
+                add: 'versions/preview.txt'
+                message: "Update preview version to $PREVIEW_VERSION"
+                default_author: github_actions
+
+            
+            
+              
+            
