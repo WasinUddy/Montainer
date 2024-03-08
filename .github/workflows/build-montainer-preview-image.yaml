@@ -5,6 +5,7 @@ on:
         paths:
             - 'Dockerfile'
             - 'versions/preview.txt'
+            - '.github/workflows/build-montainer-preview-image.yaml'
     workflow_dispatch:
 
 jobs:
@@ -56,7 +57,7 @@ jobs:
                 context: .
                 push: true
                 tags: |
-                    ghcr.io/wasinuddy/montainer/montainer-preview:latest
-                    ghcr.io/wasinuddy/montainer/montainer-preview:${{ env.PREVIEW_VERSION }}
+                    ghcr.io/wasinuddy/montainer-preview:latest
+                    ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
                 platforms: linux/amd64
                 

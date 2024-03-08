@@ -5,6 +5,7 @@ on:
         paths:
             - 'Dockerfile'
             - 'versions/stable.txt'
+            - '.github/workflows/build-montainer-stable-image.yaml'
     workflow_dispatch:
 
 jobs:
