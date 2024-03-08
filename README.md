@@ -27,29 +27,24 @@ Montainer is designed to solve this problem. It is a Minecraft server encapsulat
 ## Usage
 
 ### Option 1: Deploy on Kubernetes (Recommended)
-(TODO: Add instructions for deploying on Kubernetes)
+Look at the examples/kubernetes folder for a sample deployment.
 
 ### Option 2: Deploy with Docker Compose (Recommended)
 ```yaml
-version: '3.3'
+version: '3'
 services:
   montainer:
     image: ghcr.io/wasinuddy/montainer-stable:latest  # Use montainer-preview for Minecraft Snapshot server
+    
     ports:
-      - "8000:8000" # Web UI Console
-      - "19132:19132/udp" # Minecraft Bedrock Server
-
+      - "8000:8000"                                   # Web UI Console mount to port 8000 TCP
+      - "19132:19132/udp"                             # Minecraft Bedrock Server port 19132 UDP
+    
     volumes:
-        # Mount all the server files wanted to be persisted
-        - ./worlds:/app/minecraft_server/worlds 
-```
-
-
-### Option 3: Deploy with Docker (Not Recommended)
-```bash
-docker run -d -p 8000:8000 -p 19132:19132/udp ghcr.io/wasinuddy/montainer-stable:latest
+        - ./worlds:/app/minecraft_server/worlds       # Paste your world folder inside ./worlds (ie. ./worlds/Bedrock Level)
+    
+    restart: unless-stopped
 ```
 
 ## TODO
-- [ ] Add instructions for deploying on Kubernetes
 - [ ] Add Environment Variables for Game configuration
