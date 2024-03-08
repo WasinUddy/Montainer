@@ -24,6 +24,10 @@ jobs:
               uses: actions/setup-node@v4
               with:
                 node-version: 20
+            
+            - name: Download and Extract Minecraft Server
+              run: |
+                python3 scripts/download_minecraft_server.py --type=stable
 
             - name: Build frontend web static
               run: |

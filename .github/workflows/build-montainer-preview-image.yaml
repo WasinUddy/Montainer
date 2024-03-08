@@ -25,6 +25,11 @@ jobs:
               with:
                 node-version: 20
 
+            - name: Download and Extract Minecraft Server
+              run: |
+                  python3 scripts/download_minecraft_server.py --type=preview
+
+
             - name: Build frontend web static
               run: |
                 cd web/frontend
