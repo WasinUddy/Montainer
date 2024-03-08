@@ -27,6 +27,8 @@ jobs:
 
             - name: Download and Extract Minecraft Server
               run: |
+                  python3 -m pip install --upgrade pip
+                  python3 -m pip install requests==2.31.0
                   python3 scripts/download_minecraft_server.py --type=preview
 
 
