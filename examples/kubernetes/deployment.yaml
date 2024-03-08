@@ -1,0 +1,40 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: example-server-deployment
+  namespace: montainer
+  labels:
+    app: example-server
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: example-server
+  template:
+    metadata:
+      labels:
+        app: example-server
+    spec:
+      containers:
+      - name: example-server
+        image: ghcr.io/wasinuddy/montainer-stable:latest
+        imagePullPolicy: Always
+        resources:
+          requests:
+            memory: "4Gi" 
+            cpu: "1"
+          limits:
+            memory: "4Gi" # Highly recommended to set the memory limit as some version have shown memory leaks
+            cpu: "1"
+        ports:
+        - containerPort: 8000
+        - containerPort: 19132
+          protocol: UDP
+        volumeMounts:
+        - name: world-volume
+          mountPath: "/app/minecraft_server/worlds"
+      volumes:
+      - name: world-volume
+        hostPath: # Recommended to use hostPath for easy access to the world files
+          path: "/path/to/your/worlds"
+          type: DirectoryOrCreate # Create the directory if it doesn't exist (new world)

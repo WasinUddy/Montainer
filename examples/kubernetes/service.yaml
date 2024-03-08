@@ -1,0 +1,35 @@
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-server-webui-service
+  namespace: montainer
+  labels:
+    app: example-server-webui
+spec:
+  type: ClusterIP # Use webui with Ingress 
+  ports:
+  - port: 8000
+    targetPort: 8000
+    protocol: TCP
+    name: webui
+  selector:
+    app: example-server
+
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: example-server-minecraft-service
+  namespace: montainer
+  labels:
+    app: example-server-minecraft
+spec:
+  type: NodePort # Use NodePort for Minecrafts
+  ports:
+  - port: 19132
+    targetPort: 19132
+    nodePort: 30000
+    protocol: UDP
+    name: minecraft
+  selector:
+    app: example-server

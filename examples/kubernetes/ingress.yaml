@@ -1,0 +1,24 @@
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: montainer-ingress
+  namespace: montainer
+  annotations:
+    nginx.ingress.kubernetes.io/rewrite-target: /$2
+
+    # Add these lines for basic auth
+    nginx.nginx.ingress.kubernetes.io/auth-type: basic
+    nginx.nginx.ingress.kubernetes.io/auth-secret: basic-auth
+    nginx.nginx.ingress.kubernetes.io/auth-realm: 'Authentication Required - montainer'
+spec:
+  rules:
+    - host: mc.example.com
+      http:
+        paths:
+          - pathType: Prefix
+            path: "/example(/|$)(.*)" # Subpath for each different server
+            backend:
+              service:
+                name: example-server-webui-service
+                port:
+                  number: 8000
