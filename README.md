@@ -27,7 +27,7 @@ Montainer is designed to solve this problem. It is a Minecraft server encapsulat
 ## Usage
 
 ### Option 1: Deploy on Kubernetes (Recommended)
-Look at the examples/kubernetes folder for a sample deployment.
+Look at the `examples/kubernetes` folder for a sample deployment.
 
 ### Option 2: Deploy with Docker Compose (Recommended)
 ```yaml
