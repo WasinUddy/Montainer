@@ -1,0 +1,64 @@
+name: Build Montainer (Stable) Image
+
+on:
+    push:
+        paths:
+            - 'Dockerfile'
+            - 'versions/stable.txt'
+    workflow_dispatch:
+
+jobs:
+    fetch-versions:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout
+              uses: actions/checkout@v3
+
+            - name: Fetch Versions
+              run: |
+                echo "STABLE_VERSION=$(cat versions/stable.txt)" >> $GITHUB_ENV
+            
+
+
+    build:
+        runs-on: ubuntu-latest
+        steps:
+            # Checkout the code from GitHub repository
+            - name: Checkout
+              uses: actions/checkout@v3
+            
+            - name: Setup Python 3.11
+              uses: actions/setup-python@v5
+              with:
+                python-version: '3.11'
+
+            - name: Setup Node.js 20.x
+              uses: actions/setup-node@v4
+              with:
+                node-version: 20
+
+            - name: Build frontend web static
+              run: |
+                cd web/frontend
+                npm install
+                npm run build
+            
+            - name: Login to ghcr.io
+              uses: docker/login-action@v3
+              with:
+                registry: ghcr.io
+                username: ${{ github.repository_owner }}
+                password: ${{ secrets.PAT }}
+
+            - name: Build Montainer (Stable) Image
+              uses: docker/build-push-action@v5
+              with:
+                context: .
+                push: true
+                tags: |
+                    ghcr.io/${{ github.repository }}/montainer-stable:latest
+                    ghcr.io/${{ github.repository }}/montainer-stable:${{ env.STABLE_VERSION }}
+                platforms: linux/amd64
+                cache-from: type=gha
+                cache-to: type=gha,mode=max
+                
