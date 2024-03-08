@@ -1,0 +1,13 @@
+version: '3'
+services:
+  montainer:
+    image: ghcr.io/wasinuddy/montainer-stable:latest  # Use montainer-preview for Minecraft Snapshot server
+    
+    ports:
+      - "8000:8000"                                   # Web UI Console mount to port 8000 TCP
+      - "19132:19132/udp"                             # Minecraft Bedrock Server port 19132 UDP
+    
+    volumes:
+        - ./worlds:/app/minecraft_server/worlds       # Paste your world folder inside ./worlds (ie. ./worlds/Bedrock Level)
+    
+    restart: unless-stopped
