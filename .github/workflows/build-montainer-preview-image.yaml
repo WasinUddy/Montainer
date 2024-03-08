@@ -50,13 +50,13 @@ jobs:
                 username: ${{ github.repository_owner }}
                 password: ${{ secrets.PAT }}
 
-            - name: Build Montainer (Stable) Image
+            - name: Build Montainer (preview) Image
               uses: docker/build-push-action@v5
               with:
                 context: .
                 push: true
                 tags: |
                     ghcr.io/wasinuddy/montainer/montainer-preview:latest
-                    ghcr.io/wasinuddy/montainer/montainer-preview:${{ env.preview_VERSION }}
+                    ghcr.io/wasinuddy/montainer/montainer-preview:${{ env.PREVIEW_VERSION }}
                 platforms: linux/amd64
                 
