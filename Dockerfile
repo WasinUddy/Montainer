@@ -13,10 +13,6 @@ RUN apt-get update && apt-get install -y wget unzip libcurl4
 COPY requirements.txt requirements.txt
 RUN pip3 install -r requirements.txt
 
-# Copy minecraft-bedrock-server version and downloader
-COPY versions.json versions.json
-COPY scripts/download_minecraft_server.py scripts/download_minecraft_server.py
-
 # Expose the port
 EXPOSE 19132/udp
 EXPOSE 8000
@@ -25,5 +21,7 @@ EXPOSE 8000
 RUN mkdir web
 COPY web/backend web
 
+# Copy the server files
+COPY minecraft_server /app/minecraft_server
 
 ENTRYPOINT [ "python3", "web/main.py" ]
