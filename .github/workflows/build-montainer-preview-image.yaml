@@ -56,7 +56,7 @@ jobs:
                 context: .
                 push: true
                 tags: |
-                    ghcr.io/${{ github.repository }}/montainer-preview:latest
-                    ghcr.io/${{ github.repository }}/montainer-preview:${{ env.preview_VERSION }}
+                    ghcr.io/wasinuddy/montainer/montainer-preview:latest
+                    ghcr.io/wasinuddy/montainer/montainer-preview:${{ env.preview_VERSION }}
                 platforms: linux/amd64
                 

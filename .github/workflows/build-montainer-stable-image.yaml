@@ -56,7 +56,7 @@ jobs:
                 context: .
                 push: true
                 tags: |
-                    ghcr.io/${{ github.repository }}/montainer-stable:latest
-                    ghcr.io/${{ github.repository }}/montainer-stable:${{ env.STABLE_VERSION }}
+                    ghcr.io/wasinuddy/montainer/montainer-stable:latest
+                    ghcr.io/wasinuddy/montainer/montainer-stable:${{ env.STABLE_VERSION }}
                 platforms: linux/amd64
                 
