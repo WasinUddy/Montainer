@@ -18,7 +18,7 @@ const App = () => {
     }
   
     // Include the port if it's non-standard
-    const portPart = port && `:${port}` || '';
+    const portPart = (port && `:${port}`) || '';
   
     return `${protocol}//${hostname}${portPart}${basePath}`;
   };
