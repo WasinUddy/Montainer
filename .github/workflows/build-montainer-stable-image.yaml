@@ -59,6 +59,4 @@ jobs:
                     ghcr.io/${{ github.repository }}/montainer-stable:latest
                     ghcr.io/${{ github.repository }}/montainer-stable:${{ env.STABLE_VERSION }}
                 platforms: linux/amd64
-                cache-from: type=gha
-                cache-to: type=gha,mode=max
                 
