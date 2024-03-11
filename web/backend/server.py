@@ -2,7 +2,7 @@ import subprocess
 import os
 
 class Server:
-    def __init__(self, cwd: str):
+    def __init__(self, cwd: str, config_files: tuple = ()):
         """
         Constructor for the Server class.
 
@@ -10,13 +10,23 @@ class Server:
         """
         self.cwd = cwd
         self.server = None
+        self.config_files = config_files
 
     def start(self):
         """
         Starts the server process if it's not already running.
         """
         if not self.server:
-            
+            # Applied config files if empty initialize it with game files
+            for file in self.config_files:
+                if not os.path.exists(f"/app/configs/{file}"):
+                    # File does not exist, copy it from minecraft_server
+                    os.system(f"cp /app/minecraft_server/{file} /app/configs/{file}")
+                else:
+                    # File exists, copy it to minecraft_server and overwrite it
+                    os.system(f"cp /app/configs/{file} /app/minecraft_server/{file}")
+
+
             # Check if the log file exists, if not, create it.
             if not os.path.exists("server.log"):
                 open("server.log", "w").close()

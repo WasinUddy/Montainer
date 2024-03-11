@@ -24,11 +24,7 @@ COPY web/backend web
 # Copy the server files
 COPY minecraft_server /app/minecraft_server
 
-# Create config directory for game configuration
-RUN mkdir /app/config
-# Symbolic link to the config file of concern
-RUN ln -s /app/minecraft_server/server.properties /app/config/server.properties 
-RUN ln -s /app/minecraft_server/allowlist.json /app/config/allowlist.json
-
+# Create config directory to host await files
+RUN mkdir /app/configs
 
 ENTRYPOINT [ "python3", "web/main.py" ]
