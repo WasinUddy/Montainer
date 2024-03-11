@@ -42,6 +42,7 @@ services:
     
     volumes:
         - ./worlds:/app/minecraft_server/worlds       # Paste your world folder inside ./worlds (ie. ./worlds/Bedrock Level)
+        - ./configs:/app/configs
     
     restart: unless-stopped
 ```
