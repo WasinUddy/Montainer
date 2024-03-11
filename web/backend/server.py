@@ -2,7 +2,7 @@ import subprocess
 import os
 
 class Server:
-    def __init__(self, cwd: str, config_files: tuple = ()):
+    def __init__(self, cwd: str):
         """
         Constructor for the Server class.
 
@@ -10,7 +10,7 @@ class Server:
         """
         self.cwd = cwd
         self.server = None
-        self.config_files = config_files
+        self.config_files = ("server.properties", "allowlist.json")
 
     def start(self):
         """

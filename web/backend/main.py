@@ -72,10 +72,8 @@ def get_log():
         raise HTTPException(status_code=500, detail=str(e))
 
 if __name__ == "__main__":
-    # Declare config files
-    config_files = ("server.properties", "allowlist.json")
     # Start the Minecraft server
-    start_server(config_files=config_files)
+    start_server()
 
     # Start the FastAPI server
     import uvicorn
