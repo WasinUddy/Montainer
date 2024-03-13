@@ -13,8 +13,6 @@ jobs:
             # Checkout the code from the GitHub repository
             - name: Checkout Code
               uses: actions/checkout@v3
-              with:
-                token: ${{ secrets.PAT }}
 
             # Setup Python environment
             - name: Setup Python Environment
