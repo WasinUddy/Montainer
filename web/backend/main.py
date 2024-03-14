@@ -5,6 +5,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from server import Server
 
 import os
+import argparse
+
+# Parse command line arguments
+parser = argparse.ArgumentParser(description='Start montainer server with specified architecture.')
+parser.add_argument('--arch', type=str, help='Architecture type (e.g., amd64, arm64)')
+args = parser.parse_args()
 
 # Create a FastAPI instance
 app = FastAPI()
@@ -87,7 +93,7 @@ if __name__ == "__main__":
 
 
     # Start the Minecraft server
-    start_server()
+    start_server(x86=(args.arch=="amd64"))
 
     # Start the FastAPI server
     import uvicorn

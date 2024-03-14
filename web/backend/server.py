@@ -12,7 +12,7 @@ class Server:
         self.server = None
         self.config_files = ("server.properties", "allowlist.json")
 
-    def start(self):
+    def start(self, x86: bool = True):
         """
         Starts the server process if it's not already running.
         """
@@ -35,16 +35,29 @@ class Server:
             self.server_log = open("server.log", "r+")
 
             # Start the server process, redirecting stdout and stderr to the log file.
-            self.server = subprocess.Popen(
-                ["./bedrock_server"],
-                cwd=self.cwd,
-                stdout=self.server_log,
-                stderr=self.server_log,
-                stdin=subprocess.PIPE,
-                text=True,
-                bufsize=1,
-                universal_newlines=True
-            )
+            if x86:
+                self.server = subprocess.Popen(
+                    ["./bedrock_server"],
+                    cwd=self.cwd,
+                    stdout=self.server_log,
+                    stderr=self.server_log,
+                    stdin=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+            else:
+                self.server = subprocess.Popen(
+                    ["qemu-x86_64", "./bedrock_server"],
+                    cwd=self.cwd,
+                    stdout=self.server_log,
+                    stderr=self.server_log,
+                    stdin=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                    universal_newlines=True
+                )
+                
 
     def stop(self, force: bool = False):
         """
