@@ -9,7 +9,7 @@ import argparse
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Start montainer server with specified architecture.')
-parser.add_argument('--arch', type=str, help='Architecture type (e.g., amd64, arm64)')
+parser.add_argument('--arch', type=str, help='Architecture type (e.g., linux/amd64, linux/arm64)')
 args = parser.parse_args()
 
 # Create a FastAPI instance
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
 
     # Start the Minecraft server
-    start_server(x86=(args.arch=="amd64"))
+    start_server(x86=(args.arch=="linux/amd64"))
 
     # Start the FastAPI server
     import uvicorn
