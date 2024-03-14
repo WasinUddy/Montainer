@@ -1,3 +1,6 @@
+# Define a build argument for specifying the architecture (default is amd64)
+ARG ARCH="linux/amd64"
+
 # Use the slim version of Python 3.11 as the base image
 FROM python:3.11-slim
 
@@ -9,6 +12,9 @@ WORKDIR /app
 
 # Install dependencies required for downloading and executing the Minecraft Bedrock server
 RUN apt-get update && apt-get install -y wget unzip libcurl4
+
+# Install QEMU if the ARCH is not linux/amd64
+RUN if [ "${ARCH}" != "linux/amd64" ]; then apt-get install -y qemu-user qemu-user-static binfmt-support; fi
 
 # Copy the requirements.txt file into the container and install Python dependencies
 COPY requirements.txt requirements.txt
@@ -27,9 +33,6 @@ COPY minecraft_server /app/minecraft_server
 
 # Create a directory to host configuration files
 RUN mkdir /app/configs
-
-# Define a build argument for specifying the architecture (default is amd64)
-ARG ARCH="linux/amd64"
 
 # Set the entry point for the container, using the architecture specified by the build argument
 ENTRYPOINT [ "python3", "web/main.py", "--arch", "${ARCH}"]
