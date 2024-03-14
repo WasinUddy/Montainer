@@ -3,7 +3,8 @@ name: Build Montainer (Preview) Image
 on:
     push:
         paths:
-            - 'Dockerfile'
+            - 'dockerfiles/Dockerfile_amd64'
+            - 'dockerfiles/Dockerfile_arm64'
             - 'versions/preview.txt'
             - '.github/workflows/build-montainer-preview-image.yaml'
     workflow_dispatch:
@@ -11,27 +12,37 @@ on:
 jobs:
     build:
         runs-on: ubuntu-latest
+        strategy:
+            fail-fast: true # Stop all jobs if one fails
+            matrix:
+                platform:
+                    - linux/amd64
+                    - linux/arm64
         steps:
-            # Checkout the code from GitHub repository
-            - name: Checkout
-              uses: actions/checkout@v3
+            - name: Echo Platform
+              run: |
+                platform=${{ matrix.platform }}
+                echo "Platform: $platform"
+                echo "PLATFORM=$platform" >> $GITHUB_ENV
             
-            - name: Setup Python 3.11
+            - name: Checkout Repository
+              uses: actions/checkout@v4
+
+            - name: Set up Python 3.11
               uses: actions/setup-python@v5
               with:
-                python-version: '3.11'
-
-            - name: Setup Node.js 20.x
+                python-version: 3.11
+            
+            - name: Set up Node.js 20.x
               uses: actions/setup-node@v4
               with:
-                node-version: 20
+                node-version: 20.x
 
             - name: Download and Extract Minecraft Server
               run: |
-                  python3 -m pip install --upgrade pip
-                  python3 -m pip install requests==2.31.0
-                  python3 scripts/download_minecraft_server.py --type=preview
-
+                python3 -m pip install --upgrade pip
+                python3 -m pip install requests==2.31.0
+                python3 scripts/download_minecraft_server.py --type=preview
 
             - name: Build frontend web static
               run: |
@@ -42,9 +53,14 @@ jobs:
             - name: Fetch Versions
               run: |
                 echo "PREVIEW_VERSION=$(cat versions/preview.txt)" >> $GITHUB_ENV
-            
-            
-            - name: Login to ghcr.io
+
+            - name: Set up QEMU
+              uses: docker/setup-qemu-action@v3
+
+            - name: Set up Docker Buildx
+              uses: docker/setup-buildx-action@v3
+
+            - name: Login to GHCR
               uses: docker/login-action@v3
               with:
                 registry: ghcr.io
@@ -56,8 +72,12 @@ jobs:
               with:
                 context: .
                 push: true
+                build-args: |
+                    ARCH=${{ matrix.platform }}
                 tags: |
-                    ghcr.io/wasinuddy/montainer-preview:latest
-                    ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
-                platforms: linux/amd64
+                  ghcr.io/wasinuddy/montainer-stable:latest
+                  ghcr.io/wasinuddy/montainer-stable:${{ env.PREVIEW_VERSION }}
+                platforms: ${{ matrix.platform }}
                 
+
+            
