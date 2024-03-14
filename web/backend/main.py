@@ -39,7 +39,7 @@ def get_index():
 def start_server():
     # Start the Minecraft server
     try:
-        minecraft_server.start()
+        minecraft_server.start(x86=(args.arch=="linux/amd64"))
         return {"message": "Server started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -93,7 +93,7 @@ if __name__ == "__main__":
 
 
     # Start the Minecraft server
-    start_server(x86=(args.arch=="linux/amd64"))
+    start_server()
 
     # Start the FastAPI server
     import uvicorn
