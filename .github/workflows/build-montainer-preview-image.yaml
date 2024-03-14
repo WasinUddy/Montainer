@@ -3,8 +3,7 @@ name: Build Montainer (Preview) Image
 on:
     push:
         paths:
-            - 'dockerfiles/Dockerfile_amd64'
-            - 'dockerfiles/Dockerfile_arm64'
+            - 'Dockerfile'
             - 'versions/preview.txt'
             - '.github/workflows/build-montainer-preview-image.yaml'
     workflow_dispatch:
