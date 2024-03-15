@@ -2,6 +2,9 @@ name: Fetch Minecraft Server Version
 
 # This workflow is triggered daily and can also be manually triggered
 on:
+    push:
+        paths:
+            - '.github/workflows/fetch-minecraft-version.yml'
     schedule:
         - cron: '0 0 * * *' # Scheduled to run every day at midnight
     workflow_dispatch: # Allows manual triggering of the workflow
@@ -12,7 +15,9 @@ jobs:
         steps:
             # Checkout the code from the GitHub repository
             - name: Checkout Code
-              uses: actions/checkout@v3
+              uses: actions/checkout@v4
+              with:
+                  token: ${{ secrets.PAT }}
 
             # Setup Python environment
             - name: Setup Python Environment
