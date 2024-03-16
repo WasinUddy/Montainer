@@ -7,7 +7,7 @@
 Minecraft + Container = Montainer!!!<br>
 Minecraft Bedrock Server easily deployed with Docker.
 </p>
-
+**The QEMU for ARM64 still not working properly**
 ## Problem Statement
 
 Updating a Minecraft server can be a tedious process. While clients can easily update their game via Microsoft Store or other platforms, server updates require manual download and replacement of files. This can be time-consuming and prone to errors.
