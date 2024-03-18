@@ -73,8 +73,8 @@ jobs:
                 build-args: |
                     ARCH=${{ matrix.platform }}
                 tags: |
-                  ghcr.io/wasinuddy/montainer-stable:latest
-                  ghcr.io/wasinuddy/montainer-stable:${{ env.PREVIEW_VERSION }}
+                  ghcr.io/wasinuddy/montainer-preview:latest
+                  ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
                 platforms: ${{ matrix.platform }}
                 
 
