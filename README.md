@@ -52,3 +52,4 @@ services:
 ## TODO
 - [ ] QEMU add ability to host Minecraft Bedrock Server on ARM64
 - [ ] Add Environment Variables for Game configuration
+- [ ] Extended support for Minecraft Java Edition
