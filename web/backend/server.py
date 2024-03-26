@@ -10,7 +10,7 @@ class Server:
         """
         self.cwd = cwd
         self.server = None
-        self.config_files = ("server.properties", "allowlist.json")
+        self.config_files = ("server.properties", "allowlist.json", "permissions.json")
 
     def start(self, x86: bool = True):
         """
