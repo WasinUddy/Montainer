@@ -29,8 +29,9 @@ Montainer is designed to solve this problem. It is a Minecraft server encapsulat
 
 **Note for this microservice to work behind a subpath, you need to set the SUBPATH environment variable to the subpath you want to use.** e.g. `SUBPATH=/minecraft`
 
-### Option 1: Deploy on Kubernetes (Recommended)
+### Option 1: Deploy on Kubernetes (Do NOT Recommended)
 Look at the `examples/kubernetes` folder for a sample deployment.
+Trust me I learn it the hardway that Game server should not be inside a Kubernetes💀
 
 ### Option 2: Deploy with Docker Compose (Recommended)
 ```yaml
