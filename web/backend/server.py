@@ -11,6 +11,7 @@ class Server:
         self.cwd = cwd
         self.server = None
         self.config_files = ("server.properties", "allowlist.json", "permissions.json")
+        self.running = False
 
     def start(self, x86: bool = True):
         """
@@ -34,6 +35,7 @@ class Server:
             # Open the log file in read and write mode.
             self.server_log = open("server.log", "r+")
 
+
             # Start the server process, redirecting stdout and stderr to the log file.
             if x86:
                 self.server = subprocess.Popen(
@@ -46,6 +48,8 @@ class Server:
                     bufsize=1,
                     universal_newlines=True
                 )
+
+            # Work in progress
             else:
                 self.server = subprocess.Popen(
                     ["qemu-x86_64", "./bedrock_server"],
@@ -57,8 +61,10 @@ class Server:
                     bufsize=1,
                     universal_newlines=True
                 )
-                
 
+            # Set the running flag to True.
+            self.running = True
+                
     def stop(self, force: bool = False):
         """
         Stops the server process.
@@ -76,6 +82,10 @@ class Server:
                 self.server.kill()
                 self.server = None
 
+        # Set the running flag to False.
+        self.running = False
+            
+
     def command(self, cmd: str):
         """
         Sends a command to the server process.
@@ -89,3 +99,17 @@ class Server:
             self.server.stdin.flush()
         else:
             raise Exception("Server is not running")
+        
+    def live_probe(self):
+        """
+        Check if the server is not in illegal state. to be used with Kubernetes liveness probe
+        if the process died while flag is still True then the Server is in illegal state
+        """
+        
+        # self.server.poll() is None if the process is still running
+        if self.running!=(self.server.poll() is None):
+            return False # Illegal state
+        else:
+            return True
+        
+    

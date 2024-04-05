@@ -77,6 +77,23 @@ def get_log():
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+
+# Kubernetes health checks
+@app.get("/health/readiness")
+def readiness():
+    # Ready when FastAPI server is running (ready to accept requests)
+    return {"message": "ready"}
+
+@app.get("/health/liveness")
+def liveness():
+    # Server is not in Illegal State
+    if minecraft_server.live_probe():
+        return {"message": "live"}
+    else:
+        raise HTTPException(status_code=500, detail="Server is in Illegal State")
+
+
+
 if __name__ == "__main__":
     # edit index.html for correct subdirectory
     subpath = os.environ.get("SUBPATH", "")
