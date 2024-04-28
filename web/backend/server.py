@@ -37,30 +37,16 @@ class Server:
 
 
             # Start the server process, redirecting stdout and stderr to the log file.
-            if x86:
-                self.server = subprocess.Popen(
-                    ["./bedrock_server"],
-                    cwd=self.cwd,
-                    stdout=self.server_log,
-                    stderr=self.server_log,
-                    stdin=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    universal_newlines=True
-                )
-
-            # Work in progress
-            else:
-                self.server = subprocess.Popen(
-                    ["qemu-x86_64", "./bedrock_server"],
-                    cwd=self.cwd,
-                    stdout=self.server_log,
-                    stderr=self.server_log,
-                    stdin=subprocess.PIPE,
-                    text=True,
-                    bufsize=1,
-                    universal_newlines=True
-                )
+            self.server = subprocess.Popen(
+                ["./bedrock_server"],
+                cwd=self.cwd,
+                stdout=self.server_log,
+                stderr=self.server_log,
+                stdin=subprocess.PIPE,
+                text=True,
+                bufsize=1,
+                universal_newlines=True
+            )
 
             # Set the running flag to True.
             self.running = True
