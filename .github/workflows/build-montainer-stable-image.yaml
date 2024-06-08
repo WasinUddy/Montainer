@@ -65,17 +65,11 @@ jobs:
                 username: ${{ github.actor }}
                 password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build Montainer (Stable) Image
-              uses: docker/build-push-action@v5
-              with:
-                context: .
-                push: true
-                build-args: |
-                    ARCH=${{ matrix.platform }}
-                tags: |
-                    ghcr.io/wasinuddy/montainer-stable:latest
-                    ghcr.io/wasinuddy/montainer-stable:${{ env.STABLE_VERSION }}
-                platforms: ${{ matrix.platform }}
                 
+            - name: Build Montainer (Stable) Image
+              run: |
+                docker build . --tag ghcr.io/wasinuddy/montainer-stable:latest --tag ghcr.io/wasinuddy/montainer-stable:${{ env.STABLE_VERSION }}
+                docker push ghcr.io/wasinuddy/montainer-stable:latest
+                docker push ghcr.io/wasinuddy/montainer-stable:${{ env.STABLE_VERSION }}
 
             

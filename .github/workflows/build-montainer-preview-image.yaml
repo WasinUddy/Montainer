@@ -65,17 +65,11 @@ jobs:
                 username: ${{ github.actor }}
                 password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Build Montainer (preview) Image
-              uses: docker/build-push-action@v5
-              with:
-                context: .
-                push: true
-                build-args: |
-                    ARCH=${{ matrix.platform }}
-                tags: |
-                  ghcr.io/wasinuddy/montainer-preview:latest
-                  ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
-                platforms: ${{ matrix.platform }}
                 
+            - name: Build Montainer (preview) Image
+              run: |
+                docker build .  --tag ghcr.io/wasinuddy/montainer-preview:latest --tag ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
+                docker push ghcr.io/wasinuddy/montainer-preview:latest
+                docker push ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
 
             
