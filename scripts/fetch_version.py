@@ -11,10 +11,11 @@ def initialize_driver():
     Initialize and return a headless Chrome WebDriver with custom options.
     """
     chrome_options = Options()
-    chrome_options.add_argument("--headless")
+    chrome_options.add_argument("--headless=new")
+    chrome_options.add_argument("--window-size=1920x1080")  # Set window size
     chrome_options.add_argument("user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/58.0.3029.110 Safari/537.3")
-    chrome_options.add_argument("--no-sandbox") # This is important in containerized environments
-    chrome_options.add_argument("--disable-dev-shm-usage") # Overcome limited resource problems
+    chrome_options.add_argument("--no-sandbox")  # This is important in containerized environments
+    chrome_options.add_argument("--disable-dev-shm-usage")  # Overcome limited resource problems
     chrome_options.add_argument("--remote-debugging-port=9222")
     return webdriver.Chrome(options=chrome_options)
 
