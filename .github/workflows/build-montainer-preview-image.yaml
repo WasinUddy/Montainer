@@ -68,7 +68,7 @@ jobs:
                 
             - name: Build Montainer (preview) Image
               run: |
-                docker buildx .  --tag ghcr.io/wasinuddy/montainer-preview:latest --tag ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
+                docker build .  --tag ghcr.io/wasinuddy/montainer-preview:latest --tag ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
                 docker push ghcr.io/wasinuddy/montainer-preview:latest
                 docker push ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
 
