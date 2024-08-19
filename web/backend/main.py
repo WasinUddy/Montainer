@@ -6,6 +6,12 @@ from server import Server
 
 import os
 import argparse
+import logging
+
+# Configure logging to log only errors
+logging.basicConfig(level=logging.ERROR)
+logger = logging.getLogger("uvicorn.error")
+logger.setLevel(logging.ERROR)
 
 # Parse command line arguments
 parser = argparse.ArgumentParser(description='Start montainer server with specified architecture.')
@@ -113,6 +119,12 @@ if __name__ == "__main__":
     # Start the Minecraft server
     start_server()
 
+    # Start the FastAPI server
+    import uvicorn
+
+    # Get the port from the environment variable
+    port = int(os.environ.get("WEBPORT", 8000))
+    uvicorn.run(app, host="0.0.0.0", port=port)
     # Start the FastAPI server
     import uvicorn
 
