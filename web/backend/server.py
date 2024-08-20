@@ -13,7 +13,7 @@ class Server:
         self.config_files = ("server.properties", "allowlist.json", "permissions.json")
         self.running = False
 
-    def start(self, x86: bool = True):
+    def start(self):
         """
         Starts the server process if it's not already running.
         """

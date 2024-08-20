@@ -13,11 +13,6 @@ logging.basicConfig(level=logging.ERROR)
 logger = logging.getLogger("uvicorn.error")
 logger.setLevel(logging.ERROR)
 
-# Parse command line arguments
-parser = argparse.ArgumentParser(description='Start montainer server with specified architecture.')
-parser.add_argument('--arch', type=str, help='Architecture type (e.g., linux/amd64, linux/arm64)')
-args = parser.parse_args()
-
 # Create a FastAPI instance
 app = FastAPI()
 
@@ -45,7 +40,7 @@ def get_index():
 def start_server():
     # Start the Minecraft server
     try:
-        minecraft_server.start(x86=(args.arch=="linux/amd64"))
+        minecraft_server.start()
         return {"message": "Server started"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -119,12 +114,6 @@ if __name__ == "__main__":
     # Start the Minecraft server
     start_server()
 
-    # Start the FastAPI server
-    import uvicorn
-
-    # Get the port from the environment variable
-    port = int(os.environ.get("WEBPORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
     # Start the FastAPI server
     import uvicorn
 
