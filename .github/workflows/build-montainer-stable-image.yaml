@@ -13,16 +13,8 @@ jobs:
         runs-on: ubuntu-latest
         strategy:
             fail-fast: true # Stop all jobs if one fails
-            matrix:
-                platform:
-                    - linux/amd64
-        steps:
-            - name: Echo Platform
-              run: |
-                platform=${{ matrix.platform }}
-                echo "Platform: $platform"
-                echo "PLATFORM=$platform" >> $GITHUB_ENV
-            
+
+        steps:        
             - name: Checkout Repository
               uses: actions/checkout@v4
 
@@ -51,9 +43,6 @@ jobs:
             - name: Fetch Versions
               run: |
                 echo "STABLE_VERSION=$(cat versions/stable.txt)" >> $GITHUB_ENV
-
-            - name: Set up QEMU
-              uses: docker/setup-qemu-action@v3
 
             - name: Set up Docker Buildx
               uses: docker/setup-buildx-action@v3
