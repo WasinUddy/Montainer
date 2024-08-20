@@ -41,8 +41,6 @@ class Server:
                 self.s3.create_bucket(Bucket=S3_BUCKET)
             
 
-        
-
     def start(self):
         """
         Starts the server process if it's not already running.
