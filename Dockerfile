@@ -32,4 +32,4 @@ COPY minecraft_server /app/minecraft_server
 RUN mkdir /app/configs
 
 # Set the entry point for the container, using the architecture specified by the build argument
-ENTRYPOINT [ "python3", "web/main.py", "--arch", "${ARCH}"]
+ENTRYPOINT [ "python3", "web/main.py"]
