@@ -17,7 +17,7 @@ logger.setLevel(logging.ERROR)
 app = FastAPI()
 
 # Mount static files directory
-app.mount("/static", StaticFiles(directory="/app/web/build/static"), name="static")
+app.mount("/static", StaticFiles(directory="/app/web/build/assets"), name="static")
 
 # Enable CORS for all origins, methods and headers
 app.add_middleware(
