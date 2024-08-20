@@ -8,7 +8,7 @@ LABEL org.opencontainers.image.source=https://github.com/wasinuddy/montainer
 WORKDIR /app
 
 # Install dependencies required for downloading and executing the Minecraft Bedrock server
-RUN apt-get update && apt-get install -y wget unzip libcurl4 && apt-get clean && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y wget unzip libcurl4 zip && apt-get clean && rm -rf /var/lib/apt/lists/*
 
 # Remove Cache and unnecessary packages
 RUN apt-get clean && rm -rf /var/lib/apt/lists/*
