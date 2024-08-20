@@ -130,3 +130,7 @@ dist
 .pnp.*
 
 web/backend/build/*
+
+.venv/
+
+minecraft_server/
