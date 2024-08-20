@@ -1,5 +1,15 @@
 import subprocess
 import os
+import boto3
+import time
+
+# S3 environment variables
+S3_ENDPOINT = os.environ.get("S3_ENDPOINT")
+S3_ACCESS_KEY = os.environ.get("S3_ACCESS_KEY")
+S3_SECRET_KEY = os.environ.get("S3_SECRET_KEY")
+S3_REGION = os.environ.get("S3_REGION")
+S3_BUCKET = os.environ.get("S3_BUCKET")
+
 
 class Server:
     def __init__(self, cwd: str):
@@ -12,6 +22,26 @@ class Server:
         self.server = None
         self.config_files = ("server.properties", "allowlist.json", "permissions.json")
         self.running = False
+
+        # Check if the S3 environment variables are set
+        if not S3_ENDPOINT or not S3_ACCESS_KEY or not S3_SECRET_KEY or not S3_REGION or not S3_BUCKET:
+            self.s3_enabled = False
+        else:
+            self.s3_enabled = True
+            self.s3 = boto3.client(
+                "s3",
+                endpoint_url=S3_ENDPOINT,
+                aws_access_key_id=S3_ACCESS_KEY,
+                aws_secret_access_key=S3_SECRET_KEY,
+                region_name=S3_REGION
+            )
+
+            # Check if the S3 bucket exists, if not, create it.
+            if not self.s3.head_bucket(Bucket=S3_BUCKET):
+                self.s3.create_bucket(Bucket=S3_BUCKET)
+            
+
+        
 
     def start(self):
         """
@@ -98,4 +128,27 @@ class Server:
         else:
             return True
         
-    
+    def backup(self):
+        """
+        Backup the server data to S3 bucket.
+        """ 
+        # Stop the server before backing up
+        need_to_start = False
+        if self.running:
+            need_to_start = True
+            self.stop()
+
+        # Zip the server data worlds and configs
+        current_time = time.time()
+        os.system(f"zip -r /app/backup-{current_time}.zip /app/configs /app/minecraft_server/worlds /app/configs")
+
+        # Upload the backup to S3 bucket
+        self.s3.upload_file(f"/app/backup-{current_time}.zip", S3_BUCKET, f"backup-{current_time}.zip")
+
+        # Remove the backup file
+        os.remove(f"/app/backup-{current_time}.zip")
+
+        # Start the server if it was running
+        if need_to_start:
+            self.start()
+
