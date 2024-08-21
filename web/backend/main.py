@@ -103,7 +103,7 @@ if __name__ == "__main__":
     
     # Replace /static/ with /subpath/static/ 
     if subpath not in index_html:
-        index_html = index_html.replace("/static/", f"{subpath}/static/")
+        index_html = index_html.replace("/assets/", f"{subpath}/assets/")
     
     # Write the modified index.html back to the file
     os.remove("/app/web/build/index.html")
