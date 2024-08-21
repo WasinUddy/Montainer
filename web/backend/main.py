@@ -17,7 +17,7 @@ logger.setLevel(logging.ERROR)
 app = FastAPI()
 
 # Mount static files directory
-app.mount("/static", StaticFiles(directory="/app/web/build/assets"), name="static")
+app.mount("/assets", StaticFiles(directory="/app/web/build/assets"), name="assets")
 
 # Enable CORS for all origins, methods and headers
 app.add_middleware(
@@ -119,4 +119,4 @@ if __name__ == "__main__":
 
     # Get the port from the environment variable
     port = int(os.environ.get("WEBPORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    uvicorn.run(app, host="0.0.0.0", port=port, log_level="error")
