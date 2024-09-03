@@ -35,7 +35,6 @@ Trust me I learn it the hardway that Game server should not be inside a Kubernet
 
 ### Option 2: Deploy with Docker Compose (Recommended)
 ```yaml
-version: '3'
 services:
   montainer:
     image: ghcr.io/wasinuddy/montainer-stable:latest  # Use montainer-preview for Minecraft Snapshot server
