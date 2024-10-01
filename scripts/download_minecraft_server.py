@@ -17,7 +17,7 @@ def main():
         
 
     # Set URL
-    url = f"https://minecraft.azureedge.net/bin-linux{'' if args.type=='stable' else '-preview'}/bedrock-server-{version}.zip"
+    url = f"https://www.minecraft.net/bedrockdedicatedserver/bin-linux{'' if args.type=='stable' else '-preview'}/bedrock-server-{version}.zip"
 
     # Download and extract server
     print(f"Downloading {url}...")
