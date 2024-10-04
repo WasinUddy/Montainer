@@ -14,14 +14,18 @@ def main():
     # Load versions file
     with open(f"versions/{args.type}.txt", 'r') as f:
         version = f.read().strip()
-        
 
     # Set URL
     url = f"https://www.minecraft.net/bedrockdedicatedserver/bin-linux{'' if args.type=='stable' else '-preview'}/bedrock-server-{version}.zip"
 
+    # Custom User-Agent to mimic a browser request
+    headers = {
+        "User-Agent": 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36'
+    }
+
     # Download and extract server
     print(f"Downloading {url}...")
-    response = requests.get(url)
+    response = requests.get(url, headers=headers)
     response.raise_for_status()
 
     print("Extracting...")
@@ -36,9 +40,7 @@ def main():
 
     print("Cleaning up...")
 
-
     print("Done.")
-    
 
 if __name__ == "__main__":
     main()
