@@ -36,6 +36,9 @@ jobs:
               fi
           done
 
+      - name: Create versions Directory if not exists
+        run: mkdir -p versions
+
       - name: Store Fetched Stable Version
         run: |
           echo $STABLE_VERSION > versions/stable.txt
