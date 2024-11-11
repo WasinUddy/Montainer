@@ -66,7 +66,10 @@ class MinecraftServer:
                 self.instance.kill()
                 self.instance = None
 
-    def sent_command(self, command_string: str):
+            self.is_running = False
+            os.remove('instance.log')
+
+    def send_command(self, command_string: str):
         """
         Send a command to the Minecraft server instance.
 
