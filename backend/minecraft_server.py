@@ -82,5 +82,10 @@ class MinecraftServer:
         if self.instance:
             self.instance.stdin.write(f'{command_string}\n')
             self.instance.stdin.flush()
+
+            if command_string == 'stop':
+                self.instance = None
+                self.is_running = False
+                os.remove('instance.log')
         else:
             raise Exception('Server instance is not running.')
