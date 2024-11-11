@@ -113,7 +113,7 @@ const Terminal = ({ logData, setLogData }) => {
             {/* Terminal Output */}
             <div
                 ref={outputRef}
-                className="p-4 h-[40rem] font-mono text-sm text-gray-300 bg-gradient-to-b from-gray-900 to-gray-800 overflow-y-auto"
+                className="p-4 h-[40rem] font-mono text-sm text-gray-300 bg-gradient-to-b from-gray-900 to-gray-800"
             >
                 <pre className="whitespace-pre-wrap break-words">{displayedLogData}</pre>
             </div>
