@@ -1,18 +1,14 @@
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect, HTTPException, Depends, Request
-from fastapi.responses import JSONResponse
+from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+
 import asyncio
 import logging
-from contextlib import asynccontextmanager
 from minecraft_server import MinecraftServer
 from connection_manager import ConnectionManager
 
-# Configure logging
-logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(name)s - %(levelname)s - %(message)s')
-logger = logging.getLogger(__name__)
-
-# Initialize app and dependencies
-app = FastAPI(lifespan="lifespan")
+app = FastAPI()
 instance = MinecraftServer(cwd='./instance')
 manager = ConnectionManager()
 
@@ -26,21 +22,17 @@ app.add_middleware(
 )
 
 
-# Lifespan management
-@asynccontextmanager
-async def lifespan(app: FastAPI):
-    logger.info("Starting up Minecraft server manager...")
-    yield
-    logger.info("Shutting down Minecraft server manager...")
-    if instance.is_running:
-        await asyncio.to_thread(instance.stop)
-
 
 # Helper function for verifying server status
 async def verify_server_running():
     if not instance.is_running:
         raise HTTPException(status_code=400, detail={'status': 'error', 'message': 'Server is not running.'})
 
+# Mount Static files
+app.mount('/assets', StaticFiles(directory='./dist/assets'), name='assets')
+@app.get('/')
+async def get_index():
+    return FileResponse('./dist/index.html')
 
 # Endpoint to start the Minecraft server
 @app.post("/start")
@@ -51,7 +43,7 @@ async def start_minecraft_server():
         await asyncio.to_thread(instance.start)
         return {'status': 'success', 'message': 'Server started successfully.'}
     except Exception as e:
-        logger.error(f"Error starting server: {e}")
+        logging.error(f"Error starting server: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -68,7 +60,7 @@ async def stop_minecraft_server(running: bool = Depends(verify_server_running)):
         await asyncio.to_thread(instance.stop)
         return {'status': 'success', 'message': 'Server stopped successfully.'}
     except Exception as e:
-        logger.error(f"Error stopping server: {e}")
+        logging.error(f"Error stopping server: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -80,7 +72,7 @@ async def toggle_start_stop():
             return await stop_minecraft_server()
         return await start_minecraft_server()
     except Exception as e:
-        logger.error(f'Error toggling server: {e}')
+        logging.error(f'Error toggling server: {e}')
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -97,7 +89,7 @@ async def send_command(request: Request, running: bool = Depends(verify_server_r
         await asyncio.to_thread(instance.send_command, command)
         return {'status': 'success', 'message': 'Command sent successfully.'}
     except Exception as e:
-        logger.error(f"Error sending command: {e}")
+        logging.error(f"Error sending command: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -111,7 +103,7 @@ async def get_logs(max_lines: int = 31, running: bool = Depends(verify_server_ru
                 lines = [line.strip() for line in logs]
         return {'status': 'success', 'logs': lines}
     except Exception as e:
-        logger.error(f"Error reading logs: {e}")
+        logging.error(f"Error reading logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 
@@ -132,14 +124,14 @@ async def websocket_endpoint(websocket: WebSocket):
                         logs = log_file.readlines()[-31:]
                         data['logs'] = [line.strip() for line in logs]
                 except Exception as e:
-                    logger.error(f"Error reading logs: {e}")
+                    logging.error(f"Error reading logs: {e}")
 
             await websocket.send_json(data)
             await asyncio.sleep(0.5)
 
     except WebSocketDisconnect:
         manager.disconnect(websocket)
-        logger.info("Client disconnected from stream")
+        logging.info("Client disconnected from stream")
     except Exception as e:
-        logger.error(f"WebSocket error: {e}")
+        logging.error(f"WebSocket error: {e}")
         manager.disconnect(websocket)
