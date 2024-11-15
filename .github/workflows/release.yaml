@@ -1,0 +1,64 @@
+name: Release from Changelog
+
+on:
+  push:
+    paths:
+      - 'CHANGELOG.md'
+
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Parse Changelog
+        run: |
+          python .github/scripts/parse_changelog.py
+
+      - name: Read Changelog Outputs
+        id: read_changelog
+        run: |
+          version=$(cat github_action_outputs/version.txt)
+          date=$(cat github_action_outputs/date.txt)
+          details=$(cat github_action_outputs/latest_version_details.txt)
+          echo "VERSION=$version" >> $GITHUB_ENV
+          echo "DATE=$date" >> $GITHUB_ENV
+          echo "DETAILS<<EOF" >> $GITHUB_ENV
+          echo "$details" >> $GITHUB_ENV
+          echo "EOF" >> $GITHUB_ENV
+
+      - name: Create Tag
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const version = process.env.VERSION;
+            const tagName = `${version}`;
+            const { data: tag } = await github.rest.git.createTag({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              tag: tagName,
+              message: `Release ${tagName}`,
+              object: context.sha,
+              type: 'commit',
+            });
+            await github.rest.git.createRef({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: `refs/tags/${tagName}`,
+              sha: tag.sha,
+            });
+
+
+      - name: Create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          name: ${{ env.VERSION }}
+          tag_name: ${{ env.VERSION }}
+          body: ${{ env.DETAILS }}

@@ -17,6 +17,8 @@ class MinecraftServer:
         self.is_running = False
         self.log_file = None
 
+        self.start() # Start the server instance on initialization
+
     def start(self):
         """
         Start the Minecraft server instance if it is not already running.
