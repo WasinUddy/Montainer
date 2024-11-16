@@ -12,6 +12,9 @@ class Settings(BaseSettings):
     AWS_S3_BUCKET_NAME: str = ''
     AWS_S3_REGION: str = ''
 
+    # Session specific settings
+    INSTANCE_NAME: str = 'Montainer'
+
     class Config:
         env_file = '.env'
         env_file_encoding = 'utf-8'

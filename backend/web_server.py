@@ -7,9 +7,11 @@ import asyncio
 import logging
 from minecraft_server import MinecraftServer
 from connection_manager import ConnectionManager
+from settings import settings
 
 app = FastAPI()
 instance = MinecraftServer(cwd='./instance')
+
 manager = ConnectionManager()
 
 # CORS configuration
@@ -105,6 +107,12 @@ async def get_logs(max_lines: int = 31, running: bool = Depends(verify_server_ru
     except Exception as e:
         logging.error(f"Error reading logs: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# Endpoint to Get instance name
+@app.get('/instance_name')
+async def get_instance_name():
+    return {'instance_name': settings.INSTANCE_NAME}
 
 
 # WebSocket endpoint for data streaming
