@@ -1,6 +1,12 @@
 <h1 align="center">Montainer</h1>
 <h3 align="center">Easily deployable Minecraft Bedrock Server in a Docker container with automatic updates</h3>
 
+<p align="center">
+  <img src="https://img.shields.io/github/stars/WasinUddy/Montainer?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/forks/WasinUddy/Montainer?style=social" alt="GitHub forks">
+  <img src="https://img.shields.io/github/issues/WasinUddy/Montainer" alt="GitHub issues">
+</p>
+
 ---
 ## Problem Statement
 Updating a Minecraft server can be tedious and error-prone. While players can easily update their game via Microsoft Store or other platforms, server admins have to manually download and replace files, risking inconsistencies and errors. Montainer simplifies this process.
