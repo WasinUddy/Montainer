@@ -91,3 +91,4 @@ class MinecraftServer:
                 os.remove('instance.log')
         else:
             raise Exception('Server instance is not running.')
+

@@ -66,6 +66,8 @@ async def stop_minecraft_server(running: bool = Depends(verify_server_running)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+
+
 # Endpoint to toggle the server state
 @app.post('/toggle')
 async def toggle_start_stop():
@@ -106,6 +108,18 @@ async def get_logs(max_lines: int = 31, running: bool = Depends(verify_server_ru
         return {'status': 'success', 'logs': lines}
     except Exception as e:
         logging.error(f"Error reading logs: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+# Endpoint to restart server
+@app.post('/restart')
+async def restart_server():
+    try:
+        await asyncio.to_thread(instance.stop, force_shutdown=True)
+        await asyncio.to_thread(instance.start)
+        return {'status': 'success', 'message': 'Server restarted successfully.'}
+    except Exception as e:
+        logging.error(f"Error restarting server: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

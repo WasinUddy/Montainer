@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Play, Pause, Save } from 'lucide-react';
+import { Play, Pause, Save, RotateCcw } from 'lucide-react';
 import Terminal from './Terminal.jsx';
 
 const App = () => {
@@ -91,6 +91,14 @@ const App = () => {
                                 title={running ? 'Stop' : 'Start'}
                             >
                                 {running ? <Pause className="w-5 h-5" /> : <Play className="w-5 h-5" />}
+                            </button>
+
+                            <button
+                                onClick={() => {fetch(`${BACKEND_ADDRESS}/restart`, {'method': 'POST'})}}
+                                className="p-2 rounded-full bg-yellow-100 hover:bg-yellow-200 text-yellow-700"
+                                title="Restart"
+                            >
+                                <RotateCcw className="w-5 h-5" />
                             </button>
 
                             <button
