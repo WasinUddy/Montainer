@@ -15,6 +15,13 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
 4. **Volume Mounting**: Montainer allows you to store world data and configuration files on the host, enabling easy backup, restore, and migration.
 5. **Subpath Support**: Set unique subpaths for multiple servers on a single host, so you can manage them independently within the same Docker environment.
 
+<figure>
+  <img src="https://raw.githubusercontent.com/WasinUddy/Montainer/main/images/webui.png" 
+       alt="A screenshot of the Montainer web user interface showing key functionalities and layout." 
+       style="width:100%;max-width:600px;">
+  <figcaption>A screenshot of the Montainer WebUI, showcasing its interface and features.</figcaption>
+</figure>
+
 ## TODO
 - [ ] Add a Backup button in the web UI console to back up server data to AWS S3.
 - [ ] Implement Command autofill in the web UI console.
