@@ -1,3 +1,4 @@
 pydantic_settings
 fastapi
 uvicorn[standard]
+boto3

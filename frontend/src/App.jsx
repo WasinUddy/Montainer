@@ -1,6 +1,8 @@
 import React, { useCallback, useEffect, useState } from 'react';
 import { Play, Pause, Save, RotateCcw } from 'lucide-react';
 import Terminal from './Terminal.jsx';
+import { toast, Bounce, ToastContainer } from 'react-toastify';
+import 'react-toastify/dist/ReactToastify.css';
 
 const App = () => {
     const [running, setRunning] = useState(false);
@@ -102,7 +104,46 @@ const App = () => {
                             </button>
 
                             <button
-                                onClick={() => {}}
+                                onClick={() => {
+                                    setSaving(true);
+                                    fetch(`${BACKEND_ADDRESS}/save`, { 'method': 'POST' })
+                                        .then(response => {
+                                            if (response.status === 200) {
+                                                // Show success toast if the response is OK
+                                                toast.success('Data saved successfully!', {
+                                                    position: "top-right",
+                                                    autoClose: 5000,
+                                                    hideProgressBar: false,
+                                                    closeOnClick: true,
+                                                    pauseOnHover: true,
+                                                    draggable: true,
+                                                    progress: undefined,
+                                                    theme: "light",
+                                                    transition: Bounce,
+                                                });
+                                                setSaving(false);
+                                            } else {
+                                                return response.json().then(data => {
+                                                    throw new Error(data.message || 'Failed to save');
+                                                });
+                                            }
+                                        })
+                                        .catch(error => {
+                                            // Show error toast if any error occurs
+                                            toast.error('Failed to save: ' + error.message, {
+                                                position: "top-right",
+                                                autoClose: 5000,
+                                                hideProgressBar: false,
+                                                closeOnClick: true,
+                                                pauseOnHover: true,
+                                                draggable: true,
+                                                progress: undefined,
+                                                theme: "light",
+                                                transition: Bounce,
+                                            });
+                                            setSaving(false);
+                                        });
+                                }}
                                 disabled={saving}
                                 className={`p-2 rounded-full transition-all duration-200 ${
                                     saving ? 'bg-gray-100 text-gray-400' : 'bg-blue-100 hover:bg-blue-200 text-blue-700'
@@ -116,6 +157,7 @@ const App = () => {
                     <Terminal logData={logData} setLogData={setLogData}/>
                 </div>
             </div>
+            <ToastContainer />
         </div>
     );
 };

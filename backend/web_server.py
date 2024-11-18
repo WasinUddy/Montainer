@@ -65,9 +65,6 @@ async def stop_minecraft_server(running: bool = Depends(verify_server_running)):
         logging.error(f"Error stopping server: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
-
-
-
 # Endpoint to toggle the server state
 @app.post('/toggle')
 async def toggle_start_stop():
@@ -127,6 +124,20 @@ async def restart_server():
 @app.get('/instance_name')
 async def get_instance_name():
     return {'instance_name': settings.INSTANCE_NAME}
+
+
+# Endpoint to save persistent data to AWS S3
+@app.post('/save')
+async def save_data():
+    if settings.AWS_S3_ENDPOINT == '':
+        raise HTTPException(status_code=500, detail={'status': 'error', 'message': 'AWS S3 settings not configured.'})
+
+    try:
+        await asyncio.to_thread(instance.save_data)
+        return {'status': 'success', 'message': 'Data saved successfully.'}
+    except Exception as e:
+        logging.error(f"Error saving data: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 # WebSocket endpoint for data streaming

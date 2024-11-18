@@ -1,7 +1,10 @@
 import os
 import shutil
 import subprocess
+import boto3
+import time
 
+from settings import settings
 
 class MinecraftServer:
     def __init__(self, cwd: str):
@@ -18,6 +21,15 @@ class MinecraftServer:
         self.log_file = None
 
         self.start() # Start the server instance on initialization
+
+        if settings.AWS_S3_ENDPOINT:
+            self.s3 = boto3.client(
+                's3',
+                endpoint_url=settings.AWS_S3_ENDPOINT,
+                aws_access_key_id=settings.AWS_S3_KEY_ID,
+                aws_secret_access_key=settings.AWS_S3_SECRET_KEY,
+                region_name=settings.AWS_S3_REGION
+            )
 
     def start(self):
         """
@@ -92,3 +104,33 @@ class MinecraftServer:
         else:
             raise Exception('Server instance is not running.')
 
+    def save_data(self):
+        """
+        Save the server persistent data to AWS S3 bucket.
+        """
+        self.stop()
+
+        os.mkdir('./tmp')
+
+        # Copy the world data to a temporary directory
+        shutil.copytree('./instance/worlds', './tmp/worlds')
+
+        # Copy the config files to a temporary directory
+        for config_file in self.config_files:
+            shutil.copy(f'./configs/{config_file}', f'./tmp/{config_file}')
+
+        # Zip the temporary directory
+        shutil.make_archive('./tmp', 'zip', './tmp')
+
+        # Upload the zip file to AWS S3
+        self.s3.upload_file(
+            './tmp.zip',
+            settings.AWS_S3_BUCKET_NAME,
+            f'{settings.INSTANCE_NAME}_{int(time.time())}_backup.zip'
+        )
+
+        # Cleanup
+        shutil.rmtree('./tmp')
+        os.remove('./tmp.zip')
+
+        self.start()

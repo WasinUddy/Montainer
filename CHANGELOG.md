@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.3] - 2024-11-18
+### Added
+- Added ability to back up persistent data to AWS S3 compatible storage
+
 ## [2.0.2] - 2024-11-16
 ### Added
 - Force Restart button to restart the server
