@@ -1,6 +1,12 @@
 <h1 align="center">Montainer</h1>
 <h3 align="center">Easily deployable Minecraft Bedrock Server in a Docker container with automatic updates</h3>
 
+<p align="center">
+  <img src="https://img.shields.io/github/stars/WasinUddy/Montainer?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/forks/WasinUddy/Montainer?style=social" alt="GitHub forks">
+  <img src="https://img.shields.io/github/issues/WasinUddy/Montainer" alt="GitHub issues">
+</p>
+
 ---
 ## Problem Statement
 Updating a Minecraft server can be tedious and error-prone. While players can easily update their game via Microsoft Store or other platforms, server admins have to manually download and replace files, risking inconsistencies and errors. Montainer simplifies this process.
@@ -14,6 +20,13 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
 3. **Automatic Updates**: The repository is updated automatically by web scraping the Mojang website. This means you can always use the `:latest` tag to get the most recent version of the server. You can also use auto-deploying programs like [watchtower](https://github.com/containrrr/watchtower) to ensure your server is always up-to-date.
 4. **Volume Mounting**: Montainer allows you to store world data and configuration files on the host, enabling easy backup, restore, and migration.
 5. **Subpath Support**: Set unique subpaths for multiple servers on a single host, so you can manage them independently within the same Docker environment.
+
+<figure>
+  <img src="https://raw.githubusercontent.com/WasinUddy/Montainer/main/images/webui.png" 
+       alt="A screenshot of the Montainer web user interface showing key functionalities and layout." 
+       style="width:100%;max-width:600px;">
+  <figcaption>A screenshot of the Montainer WebUI, showcasing its interface and features.</figcaption>
+</figure>
 
 ## TODO
 - [ ] Add a Backup button in the web UI console to back up server data to AWS S3.
@@ -34,8 +47,6 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
        volumes:
          - ./worlds:/app/instance/worlds # Mount for world data
          - ./configs:/app/configs       # Mount for server configurations
-       environment:
-         - SUBPATH='/'                   # Optional web UI subpath (e.g., /smp1, /smp2)
        restart: unless-stopped
    ```
 
