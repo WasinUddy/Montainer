@@ -29,7 +29,7 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
 </figure>
 
 ## TODO
-- [ ] Add a Backup button in the web UI console to back up server data to AWS S3.
+- [x] Add a Backup button in the web UI console to back up server data to AWS S3.
 - [ ] Implement Command autofill in the web UI console.
 - [ ] Add Log export functionality to integrate with log aggregation services.
 
@@ -55,6 +55,19 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
 
 3. **Kubernetes Deployment** 🚢
    Montainer can also be deployed on Kubernetes. Ensure your Ingress Controller supports WebSocket, as both HTTP and WebSocket are used for the web UI console.
+
+## Environment Variables
+
+| **Environment Variable**     | **Description**                                                                                                                            | **Default Value**   |
+|------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------|---------------------|
+| `SUBPATH_URL`                 | The subpath URL used to access Montainer's web UI. If set, Montainer will be accessible at the path `http://localhost:8000/{SUBPATH_URL}`. | `/`                 |
+| `AWS_S3_ENDPOINT`             | The endpoint for AWS S3 or compatible storage service. This is required for backup operations. empty string for disable s3 back up         | (empty string)      |
+| `AWS_S3_KEY_ID`              | The AWS access key ID for authentication with the S3 service.                                                                              | (empty string)      |
+| `AWS_S3_SECRET_KEY`           | The AWS secret access key for authentication with the S3 service.                                                                          | (empty string)      |
+| `AWS_S3_BUCKET_NAME`          | The name of the S3 bucket where backup data will be stored.                                                                                | (empty string)      |
+| `AWS_S3_REGION`               | The AWS region where the S3 bucket is located. This is needed for connecting to S3.                                                        | (empty string)      |
+| `INSTANCE_NAME`               | The name of the Montainer instance. This is used to uniquely identify and label your Montainer instance.                                   | `Montainer`         |
+
 
 ---
 ## Contributing
