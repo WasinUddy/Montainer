@@ -1,0 +1,10 @@
+services:
+  montainer:
+    image: ghcr.io/wasinuddy/montainer-stable:latest # 'montainer-preview' for Snapshot server
+    ports:
+      - "8000:8000"      # Web UI console on port 8000
+      - "19132:19132/udp" # Minecraft Bedrock server port
+    volumes:
+      - ./worlds:/app/instance/worlds # Mount for world data
+      - ./configs:/app/configs       # Mount for server configurations
+    restart: unless-stopped
