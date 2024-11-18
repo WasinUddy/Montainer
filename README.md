@@ -47,8 +47,6 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
        volumes:
          - ./worlds:/app/instance/worlds # Mount for world data
          - ./configs:/app/configs       # Mount for server configurations
-       environment:
-         - SUBPATH='/'                   # Optional web UI subpath (e.g., /smp1, /smp2)
        restart: unless-stopped
    ```
 
