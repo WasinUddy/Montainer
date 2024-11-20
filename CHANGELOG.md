@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.5] - 2024-11-20
+### Fixed
+- boto3 module not found fix by using requirments.txt within Dockerfile
+
 ## [2.0.4] - 2024-11-20
 ### Added
 - Added `/healthz` endpoint to check the health of the server for use in Kubernetes liveness and readiness probes

@@ -18,7 +18,9 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Install Python dependencies in one layer
-RUN pip install --no-cache-dir pydantic_settings fastapi uvicorn[standard]
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+RUN rm requirements.txt
 
 # Create necessary directories
 RUN mkdir -p instance configs
