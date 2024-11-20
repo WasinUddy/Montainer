@@ -107,30 +107,60 @@ class MinecraftServer:
     def save_data(self):
         """
         Save the server persistent data to AWS S3 bucket.
+        Handles cleanup of temporary files and directories in case of failures.
+        
+        Raises:
+            Exception: If there are errors during the backup process
         """
-        self.stop()
+        tmp_dir = './tmp'
+        zip_file = './tmp.zip'
+        
+        try:
+            # Stop the server first
+            self.stop()
+            
+            # Clean up any existing temporary files from failed previous attempts
+            if os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir)
+            if os.path.exists(zip_file):
+                os.remove(zip_file)
+                
+            # Create fresh temporary directory
+            os.makedirs(tmp_dir)
 
-        os.mkdir('./tmp')
+            # Copy the world data to temporary directory
+            shutil.copytree('./instance/worlds', os.path.join(tmp_dir, 'worlds'))
 
-        # Copy the world data to a temporary directory
-        shutil.copytree('./instance/worlds', './tmp/worlds')
+            # Copy the config files to temporary directory
+            for config_file in self.config_files:
+                shutil.copy(f'./configs/{config_file}', os.path.join(tmp_dir, config_file))
 
-        # Copy the config files to a temporary directory
-        for config_file in self.config_files:
-            shutil.copy(f'./configs/{config_file}', f'./tmp/{config_file}')
+            # Create zip archive
+            shutil.make_archive('./tmp', 'zip', tmp_dir)
 
-        # Zip the temporary directory
-        shutil.make_archive('./tmp', 'zip', './tmp')
+            # Verify S3 bucket exists before attempting upload
+            try:
+                self.s3.head_bucket(Bucket=settings.AWS_S3_BUCKET_NAME)
+            except Exception as e:
+                raise Exception(f"S3 bucket '{settings.AWS_S3_BUCKET_NAME}' is not accessible: {str(e)}")
 
-        # Upload the zip file to AWS S3
-        self.s3.upload_file(
-            './tmp.zip',
-            settings.AWS_S3_BUCKET_NAME,
-            f'{settings.INSTANCE_NAME}_{int(time.time())}_backup.zip'
-        )
+            # Upload to S3
+            backup_key = f'{settings.INSTANCE_NAME}_{int(time.time())}_backup.zip'
+            self.s3.upload_file(
+                zip_file,
+                settings.AWS_S3_BUCKET_NAME,
+                backup_key
+            )
 
-        # Cleanup
-        shutil.rmtree('./tmp')
-        os.remove('./tmp.zip')
-
-        self.start()
+        except Exception as e:
+            raise Exception(f"Failed to create backup: {str(e)}")
+            
+        finally:
+            # Cleanup temporary files
+            if os.path.exists(tmp_dir):
+                shutil.rmtree(tmp_dir)
+            if os.path.exists(zip_file):
+                os.remove(zip_file)
+                
+            # Restart the server
+            self.start()

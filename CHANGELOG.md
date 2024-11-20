@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.6] - 2024-11-20
+### Fixed
+- Fixed unable to backup to AWS S3
+
 ## [2.0.5] - 2024-11-20
 ### Fixed
 - boto3 module not found fix by using requirments.txt within Dockerfile
