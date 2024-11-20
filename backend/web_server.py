@@ -138,6 +138,12 @@ async def save_data():
     except Exception as e:
         logging.error(f"Error saving data: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+    
+
+# Health check liveliness and readiness probe for k8s compatibility
+@app.get('/healthz')
+async def health_check():
+    return {'status': 'ok'}
 
 
 # WebSocket endpoint for data streaming

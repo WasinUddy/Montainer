@@ -34,5 +34,8 @@ COPY backend/ /app/
 EXPOSE 8000
 EXPOSE 19132/udp
 
+# Healthcheck to ensure the container is healthy
+HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost:8000/healthz || exit 1
+
 # Define the entry point for the container
 CMD ["python", "main.py"]

@@ -1,5 +1,9 @@
 # Changelog
 
+## [2.0.4] - 2024-11-20
+### Added
+- Added `/healthz` endpoint to check the health of the server for use in Kubernetes liveness and readiness probes
+
 ## [2.0.3] - 2024-11-18
 ### Added
 - Added ability to back up persistent data to AWS S3 compatible storage
