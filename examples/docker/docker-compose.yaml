@@ -1,10 +1,37 @@
 services:
   montainer:
-    image: ghcr.io/wasinuddy/montainer-stable:latest # 'montainer-preview' for Snapshot server
+    image: ghcr.io/wasinuddy/montainer-stable:latest # Use 'montainer-preview' for Snapshot server
     ports:
-      - "8000:8000"      # Web UI console on port 8000
-      - "19132:19132/udp" # Minecraft Bedrock server port
+      - "8000:8000"         # Web UI console on port 8000
+      - "19132:19132/udp"   # Minecraft Bedrock server port
     volumes:
       - ./worlds:/app/instance/worlds # Mount for world data
       - ./configs:/app/configs       # Mount for server configurations
+    environment:
+      - AWS_S3_ENDPOINT=http://minio:9000
+      - AWS_S3_KEY_ID=minioadmin
+      - AWS_S3_SECRET_KEY=minioadmin
+      - AWS_S3_BUCKET_NAME=montainer-backups
+      - AWS_S3_REGION=us-east-1
+      - INSTANCE_NAME=MontainerInstance
+    depends_on:
+      - minio
     restart: unless-stopped
+
+  minio:
+    image: minio/minio:latest
+    ports:
+      - "9000:9000" # MinIO web UI and API
+      - "9001:9001" # MinIO console
+    volumes:
+      - ./minio/data:/data # Persistent data storage for MinIO
+      - ./minio/config:/root/.minio # MinIO configuration
+    environment:
+      - MINIO_ROOT_USER=minioadmin
+      - MINIO_ROOT_PASSWORD=minioadmin
+    command: server /data --console-address ":9001"
+    restart: unless-stopped
+
+volumes:
+  minio_data: # Persistent storage for MinIO
+  minio_config:
