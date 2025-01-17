@@ -1,5 +1,6 @@
 # Use a smaller base image for Python 3.12
-FROM python:3.12-slim AS base
+# FROM python:3.12-slim AS base
+FROM --platform=linux/arm64 python:3.12-slim AS base
 
 # Metadata about the image
 LABEL authors="WasinUddy"
