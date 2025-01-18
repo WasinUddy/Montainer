@@ -1,5 +1,10 @@
 # Changelog
 
+## [2.1.0] - 2025-01-18
+### Added
+- Added platform specifications in the Dockerfile -- `linux/amd64` as suggested by [pull request #14](https://github.com/WasinUddy/Montainer/pull/14)
+- Added Documentation for usage of Montainer on ARM64 machines
+
 ## [2.0.6] - 2024-11-20
 ### Fixed
 - Fixed unable to backup to AWS S3

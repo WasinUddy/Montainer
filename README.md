@@ -33,28 +33,66 @@ Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock se
 - [ ] Implement Command autofill in the web UI console.
 - [ ] Add Log export functionality to integrate with log aggregation services.
 
-## Usage
+# Montainer Deployment Guide
 
-1. **Deploy Montainer with Docker (recommended):**
+## Docker Deployment (Recommended)
 
-   ```yaml
-   services:
-     montainer:
-       image: ghcr.io/wasinuddy/montainer-stable:latest # 'montainer-preview' for Snapshot server
-       ports:
-         - "8000:8000"      # Web UI console on port 8000
-         - "19132:19132/udp" # Minecraft Bedrock server port
-       volumes:
-         - ./worlds:/app/instance/worlds # Mount for world data
-         - ./configs:/app/configs       # Mount for server configurations
-       restart: unless-stopped
-   ```
+### Platform-Specific Instructions
 
-2. **Access the web UI console**:
-   Visit `http://localhost:8000` in your browser. Use the Start/Stop button to control the server directly from the console.
+#### For Native AMD64 and Apple Silicon
+```yaml
+services:
+  montainer:
+    image: ghcr.io/wasinuddy/montainer-stable:latest  # Use 'montainer-preview' for Snapshot server
+    ports:
+      - "8000:8000"       # Web UI console
+      - "19132:19132/udp" # Minecraft Bedrock server
+    volumes:
+      - ./worlds:/app/instance/worlds  # World data
+      - ./configs:/app/configs         # Server configurations
+    restart: unless-stopped
+```
 
-3. **Kubernetes Deployment** 🚢
-   Montainer can also be deployed on Kubernetes. Ensure your Ingress Controller supports WebSocket, as both HTTP and WebSocket are used for the web UI console.
+#### For ARM64 Machines  (tested on Ampere Altra A1)
+> **Note**: The official Mojang binary does not support ARM64 architecture. However, you can run the Docker image on ARM64 machines using Linux Kernel **binfmt** for architecture emulation. which may lead to performance issues.
+
+```yaml
+services:
+  binfmt:
+    image: tonistiigi/binfmt
+    privileged: true
+    command: --install all
+    restart: "no"
+  
+  montainer:
+    image: ghcr.io/wasinuddy/montainer-stable:latest  # Use 'montainer-preview' for Snapshot server
+    platform: linux/amd64  # Explicitly specify platform
+    ports:
+      - "8000:8000"       # Web UI console
+      - "19132:19132/udp" # Minecraft Bedrock server
+    volumes:
+      - ./worlds:/app/instance/worlds  # World data
+      - ./configs:/app/configs         # Server configurations
+    restart: unless-stopped
+    depends_on:
+      binfmt:
+        condition: service_completed_successfully
+```
+
+
+
+## Accessing the Server
+
+1. Open your web browser and navigate to `http://localhost:8000`
+2. Use the Web UI console to start/stop the server and manage settings
+
+## Kubernetes Deployment 🚢
+
+Montainer supports Kubernetes deployment with the following requirements:
+- Your Ingress Controller must support WebSocket connections
+- Both HTTP and WebSocket protocols are used for the web UI console
+
+> For detailed Kubernetes deployment instructions, please refer to our Kubernetes documentation.
 
 ## Environment Variables
 
