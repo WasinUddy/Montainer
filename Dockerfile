@@ -34,10 +34,11 @@ COPY backend/ /app/
 
 # Expose the required port
 EXPOSE 8000 \
-       19132/udp
+       19132/udp \
+       19133/udp
 
 # Healthcheck to ensure the container is healthy
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --output-document=- http://0.0.0.0:8000/healthz || exit 1
+HEALTHCHECK --interval=1m30s --timeout=30s --start-period=5s --retries=5 CMD wget --quiet --tries=1 --output-document=- http://0.0.0.0:8000/healthz || exit 1
 
 # Define the entry point for the container
 CMD ["python", "main.py"]
