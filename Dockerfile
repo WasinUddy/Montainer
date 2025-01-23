@@ -19,12 +19,12 @@ RUN apt-get update \
 
 # Install Python dependencies in one layer
 COPY requirements.txt .
-RUN pip install --no-cache-dir -r requirements.txt
-RUN rm requirements.txt
+RUN pip install --no-cache-dir -r requirements.txt; \
+    rm requirements.txt
 
 # Create necessary directories
-RUN mkdir -p instance configs
-RUN mkdir -p /app/instance/worlds # Create necessary directories for volume mounts
+RUN mkdir -p instance configs; \
+    mkdir -p /app/instance/worlds # Create necessary directories for volume mounts
 # TODO: Add mount points for behavior_packs, resource_packs, etc.
 
 # Copy only the necessary files to the container
@@ -33,11 +33,12 @@ COPY bedrock_server/ /app/instance
 COPY backend/ /app/
 
 # Expose the required port
-EXPOSE 8000
-EXPOSE 19132/udp
+EXPOSE 8000 \
+       19132/udp \
+       19133/udp
 
 # Healthcheck to ensure the container is healthy
-HEALTHCHECK --interval=30s --timeout=30s --start-period=5s --retries=3 CMD wget --quiet --tries=1 --spider http://localhost:8000/healthz || exit 1
+HEALTHCHECK --interval=1m30s --timeout=30s --start-period=5s --retries=5 CMD wget --quiet --tries=1 --output-document=- http://0.0.0.0:8000/healthz || exit 1
 
 # Define the entry point for the container
 CMD ["python", "main.py"]
