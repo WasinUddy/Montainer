@@ -1,5 +1,11 @@
 # Changelog
 
+## [2.1.1] - 2025-01-28
+### Added
+- Expose ipv6  on 19133/udp by [Jason Clark](https://github.com/SuperJC710e)
+###Fixed
+- Container `HealthCheck` not working properly by [Jason Clark](https://github.com/SuperJC710e)
+
 ## [2.1.0] - 2025-01-18
 ### Added
 - Added platform specifications in the Dockerfile -- `linux/amd64` as suggested by [pull request #14](https://github.com/WasinUddy/Montainer/pull/14)
