@@ -11,6 +11,8 @@
 ## Problem Statement
 Updating a Minecraft server can be tedious and error-prone. While players can easily update their game via Microsoft Store or other platforms, server admins have to manually download and replace files, risking inconsistencies and errors. Montainer simplifies this process.
 
+My speak in Thai [How web automation saved my friendship by Wasin Silakong](https://youtu.be/fQo9j648l5s?si=9dq58Pp1uaxU-fKY)
+
 ## Solution
 Montainer (Minecraft + Container) provides a self-contained Minecraft Bedrock server in a Docker container, streamlining updates through automated web scraping of Mojang's website. By using the `:latest` tag, users can always deploy the most recent server version with minimal effort.
 
