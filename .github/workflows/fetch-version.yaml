@@ -25,8 +25,8 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          sudo apt install chromium-browser -y
-          pip install selenium
+          pip install playwright, playwright-stealth
+          python -m playwright install chromium
 
       - name: Fetch Minecraft Server Version
         run: | 
