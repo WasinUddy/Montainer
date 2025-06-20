@@ -25,7 +25,8 @@ jobs:
       - name: Install Dependencies
         run: |
           sudo apt-get update
-          pip install playwright, playwright-stealth
+          pip install playwright
+          pip install playwright-stealth
           python -m playwright install chromium
 
       - name: Fetch Minecraft Server Version
