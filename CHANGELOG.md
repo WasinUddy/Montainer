@@ -1,9 +1,14 @@
 # Changelog
 
+## [2.2.0] - 2025-06-20
+### Fixed
+- Updated the scraping logic to match mojang's new website
+
 ## [2.1.1] - 2025-01-28
 ### Added
 - Expose ipv6  on 19133/udp by [Jason Clark](https://github.com/SuperJC710e)
-###Fixed
+
+### Fixed
 - Container `HealthCheck` not working properly by [Jason Clark](https://github.com/SuperJC710e)
 
 ## [2.1.0] - 2025-01-18
