@@ -1,5 +1,5 @@
 import React, { useCallback, useEffect, useState } from 'react';
-import { Play, Pause, Save, RotateCcw } from 'lucide-react';
+import { Play, Pause, Save, RotateCcw, Star } from 'lucide-react';
 import Terminal from './Terminal.jsx';
 import { toast, Bounce, ToastContainer } from 'react-toastify';
 import 'react-toastify/dist/ReactToastify.css';
@@ -67,6 +67,11 @@ const App = () => {
             ws.close();
         };
     }, [connectWebSocket]);
+
+    const handleGitHubStar = () => {
+        // Replace 'your-username/your-repo' with the actual GitHub repository URL
+        window.open('https://github.com/wasinuddy/montainer', '_blank');
+    };
 
     return (
         <div className="min-h-screen bg-gray-100 p-4">
@@ -155,6 +160,19 @@ const App = () => {
                         </div>
                     </div>
                     <Terminal logData={logData} setLogData={setLogData}/>
+                </div>
+
+                {/* Footer with GitHub star plea */}
+                <div className="border-t border-gray-200 px-6 py-4 bg-gray-50">
+                    <div className="flex items-center justify-center">
+                        <button
+                            onClick={handleGitHubStar}
+                            className="flex items-center space-x-2 px-4 py-2 rounded-lg bg-white hover:bg-amber-50 text-gray-600 hover:text-amber-700 border border-gray-200 hover:border-amber-200 transition-all duration-200 shadow-sm hover:shadow-md"
+                        >
+                            <Star className="w-4 h-4" />
+                            <span className="text-sm">If you like Montainer, please star it on GitHub! 🥺</span>
+                        </button>
+                    </div>
                 </div>
             </div>
             <ToastContainer />
