@@ -7,6 +7,7 @@ services:
     volumes:
       - ./worlds:/app/instance/worlds # Mount for world data
       - ./configs:/app/configs       # Mount for server configurations
+      - ./resource_packs:/app/resource_packs    # Mount for resource pack mods
     environment:
       - AWS_S3_ENDPOINT=http://minio:9000
       - AWS_S3_KEY_ID=minioadmin

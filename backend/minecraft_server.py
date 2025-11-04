@@ -5,6 +5,7 @@ import boto3
 import time
 
 from settings import settings
+from mod_utils import copy_if_not_exists
 
 class MinecraftServer:
     def __init__(self, cwd: str):
@@ -43,6 +44,9 @@ class MinecraftServer:
                     shutil.copy(f'./instance/{config_file}', f'./configs/{config_file}')
                 else:
                     shutil.copy(f'./configs/{config_file}', f'./instance/{config_file}')
+
+            # Copy resource packs from the bind mount to the container, try to avoid clobbering existing files
+            shutil.copytree('./resource_packs', './instance/resource_packs', copy_function=copy_if_not_exists, dirs_exist_ok=True)
 
             # Check if the log file exists and create it if it doesn't
             if not os.path.exists('instance.log'):
