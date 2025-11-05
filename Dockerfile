@@ -23,7 +23,7 @@ RUN pip install --no-cache-dir -r requirements.txt; \
     rm requirements.txt
 
 # Create necessary directories
-RUN mkdir -p instance configs; \
+RUN mkdir -p instance configs resource_packs; \
     mkdir -p /app/instance/worlds # Create necessary directories for volume mounts
 # TODO: Add mount points for behavior_packs, resource_packs, etc.
 
