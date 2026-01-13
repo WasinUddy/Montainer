@@ -76,6 +76,10 @@ class MinecraftServer:
         force_shutdown (bool): Forcefully shutdown the server instance if True.
         """
         if self.instance:
+            # Sync config files from game instance directory to mapped volume
+            for config_file in self.config_files:
+                shutil.copy(f'./instance/{config_file}', f'./configs/{config_file}')
+
             if not force_shutdown:
                 self.instance.stdin.write('stop\n')
                 self.instance.stdin.flush()
