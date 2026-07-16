@@ -1,5 +1,29 @@
 # Changelog
 
+## [3.0.0] - 2026-07-16
+### Highlights
+- Rebuilt Montainer's backend in Go 1.26 with Gin, replacing the Python/FastAPI runtime with a concurrency-safe Bedrock process supervisor.
+- Added optional, non-blocking OpenTelemetry log export while preserving standalone local file, HTTP, and WebSocket logging.
+- Redesigned the Web UI as a responsive light console with lifecycle details, log search and filtering, and offline Minecraft command autocomplete including a contextual teleport guide.
+
+### Added
+- Explicit `starting`, `running`, `stopping`, `stopped`, and `failed` lifecycle states, graceful shutdown escalation, process generations, and a readiness endpoint.
+- S3-compatible backups implemented with AWS SDK for Go, consistent lifecycle locking, archive validation, and a MinIO example stack.
+- Black-box Cucumber acceptance tests using a controllable fake Bedrock process for lifecycle, cancellation, local logging, WebSockets, subpath routing, and OTLP behavior.
+- Real-image acceptance tests that boot the exact scraped Mojang image and exercise RakNet discovery, concurrent lifecycle operations, OTEL export/outage/flush, MinIO backup integrity, and an offline virtual player join and teleport.
+- Stable and preview image pipelines connected through immutable, checksummed artifacts and channel-specific promotion identity records.
+
+### Changed
+- Unified stable and preview delivery into one staged, matrix-oriented CI/CD graph with path-aware channel selection and parallel runners.
+- Build and publish a non-root `linux/amd64` image containing the compiled frontend, static Go service, and checksum-verified Mojang Bedrock archive.
+- Preserve the existing management routes, S3 environment variables, subpath behavior, and persistent world/config/resource-pack layout while returning clearer lifecycle conflicts and failures.
+- Publish only the exact Docker artifact that passed acceptance tests; immutable tags include the Bedrock version and source commit before the verified manifest is copied to `latest`.
+
+### Breaking changes
+- The Python runtime and FastAPI backend are removed. Direct-binary deployments must now run the Go executable and explicitly provide their environment.
+- The container runs as UID/GID `10001`; existing bind mounts must be writable by that identity.
+- OTLP export supports `http/protobuf`, and deployments should allow at least 90 seconds for graceful container termination.
+
 ## [2.2.0] - 2025-06-20
 ### Fixed
 - Updated the scraping logic to match mojang's new website
