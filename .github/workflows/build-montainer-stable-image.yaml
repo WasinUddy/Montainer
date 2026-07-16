@@ -7,13 +7,27 @@ on:
       - 'cmd/**'
       - 'internal/**'
       - 'frontend/**'
+      - 'acceptance/**'
+      - 'test/**'
+      - 'examples/docker/**'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
       - '.dockerignore'
+      - 'CHANGELOG.md'
       - 'versions/stable.txt'
+      - 'versions/stable.url'
+      - 'versions/stable.sha256'
+      - '.github/workflows/ci.yaml'
+      - '.github/workflows/build-test-promote-image.yaml'
       - '.github/workflows/build-montainer-stable-image.yaml'
   workflow_dispatch:
+    inputs:
+      publish:
+        description: Promote the tested candidate to stable release tags
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -23,43 +37,22 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  test:
+  quality:
+    name: Source quality gates
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yaml
 
-  build:
-    needs: test
-    runs-on: ubuntu-latest
+  image:
+    name: Build, acceptance-test, and promote stable
+    needs: quality
     permissions:
       contents: read
       packages: write
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Read Bedrock version
-        run: echo "STABLE_VERSION=$(cat versions/stable.txt)" >> "$GITHUB_ENV"
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v3
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and publish stable image
-        uses: docker/build-push-action@v6
-        with:
-          context: .
-          platforms: linux/amd64
-          push: true
-          build-args: SERVER_TYPE=stable
-          tags: |
-            ghcr.io/wasinuddy/montainer-stable:latest
-            ghcr.io/wasinuddy/montainer-stable:${{ env.STABLE_VERSION }}-${{ github.sha }}
-          cache-from: type=gha,scope=stable
-          cache-to: type=gha,mode=max,scope=stable
+    uses: ./.github/workflows/build-test-promote-image.yaml
+    with:
+      server_type: stable
+      version_file: versions/stable.txt
+      registry_image: ghcr.io/wasinuddy/montainer-stable
+      acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup", "client"]'
+      publish: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}

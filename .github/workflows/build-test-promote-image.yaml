@@ -1,0 +1,198 @@
+name: Build, test, and promote Montainer image
+
+on:
+  workflow_call:
+    inputs:
+      server_type:
+        description: Mojang release channel used by the Docker build
+        required: true
+        type: string
+      version_file:
+        description: Repository file containing the scraped Bedrock version
+        required: true
+        type: string
+      registry_image:
+        description: GHCR image name without a tag
+        required: true
+        type: string
+      acceptance_suites:
+        description: JSON array of real-image Godog tags to fan out across runners
+        required: true
+        type: string
+      publish:
+        description: Apply release tags after every acceptance shard passes
+        required: true
+        type: boolean
+
+permissions:
+  contents: read
+
+jobs:
+  build-candidate:
+    name: Build immutable ${{ inputs.server_type }} candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      digest: ${{ steps.build.outputs.digest }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Validate scraped Bedrock version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < '${{ inputs.version_file }}')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid Bedrock version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR for candidate storage
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push immutable candidate digest
+        id: build
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: |
+            SERVER_TYPE=${{ inputs.server_type }}
+            BEDROCK_VERSION=${{ steps.version.outputs.version }}
+          outputs: type=image,name=${{ inputs.registry_image }},push-by-digest=true,name-canonical=true,push=true
+          cache-from: type=gha,scope=${{ inputs.server_type }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.server_type }}
+
+      - name: Record candidate identity
+        run: |
+          echo '### Immutable candidate' >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ inputs.registry_image }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Bedrock ${{ steps.version.outputs.version }} (${{ inputs.server_type }})' >> "$GITHUB_STEP_SUMMARY"
+
+  image-acceptance:
+    name: Real image / ${{ matrix.suite }}
+    needs: build-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      packages: read
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        suite: ${{ fromJSON(inputs.acceptance_suites) }}
+    env:
+      CANDIDATE_IMAGE: ${{ inputs.registry_image }}@${{ needs.build-candidate.outputs.digest }}
+      GODOG_TAGS: '@${{ matrix.suite }}'
+      MONTAINER_ACCEPTANCE_IMAGE: ${{ inputs.registry_image }}@${{ needs.build-candidate.outputs.digest }}
+      MONTAINER_EXPECTED_BEDROCK_VERSION: ${{ needs.build-candidate.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            test/fixtures/bedrockclient/go.sum
+
+      - name: Log in to GHCR for the immutable candidate
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Pull the exact candidate digest
+        run: docker pull "$CANDIDATE_IMAGE"
+
+      - name: Run ${{ matrix.suite }} real-image acceptance scenarios
+        run: go test -v -count=1 ./acceptance/realimage
+
+      - name: Capture orphaned container diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          for container in $(docker ps -aq --filter 'name=montainer-'); do
+            echo "===== $container ====="
+            docker logs --tail 500 "$container" || true
+          done
+
+      - name: Clean up isolated Docker resources
+        if: always()
+        run: |
+          containers="$(docker ps -aq --filter 'name=montainer-')"
+          if [ -n "$containers" ]; then
+            docker rm --force --volumes $containers
+          fi
+          for network in $(docker network ls -q --filter 'name=montainer-real-'); do
+            docker network rm "$network" || true
+          done
+
+  promote:
+    name: Promote tested ${{ inputs.server_type }} image
+    needs: [build-candidate, image-acceptance]
+    if: inputs.publish
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply release tags to the tested digest
+        env:
+          DIGEST: ${{ needs.build-candidate.outputs.digest }}
+          VERSION: ${{ needs.build-candidate.outputs.version }}
+          REGISTRY_IMAGE: ${{ inputs.registry_image }}
+        run: |
+          immutable_tag="$REGISTRY_IMAGE:$VERSION-${{ github.sha }}"
+          existing_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_tag" 2>/dev/null || true)"
+          if [ -n "$existing_digest" ] && [ "$existing_digest" != "$DIGEST" ]; then
+            echo "Refusing to overwrite immutable tag $immutable_tag ($existing_digest != $DIGEST)" >&2
+            exit 1
+          fi
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "$REGISTRY_IMAGE:latest" \
+            --tag "$immutable_tag" \
+            "$REGISTRY_IMAGE@$DIGEST"
+
+      - name: Verify promoted tags reference the tested digest
+        env:
+          DIGEST: ${{ needs.build-candidate.outputs.digest }}
+          VERSION: ${{ needs.build-candidate.outputs.version }}
+          REGISTRY_IMAGE: ${{ inputs.registry_image }}
+        run: |
+          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:$VERSION-${{ github.sha }}")"
+          latest_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:latest")"
+          if [ "$immutable_digest" != "$DIGEST" ] || [ "$latest_digest" != "$DIGEST" ]; then
+            echo "Promotion digest mismatch: candidate=$DIGEST immutable=$immutable_digest latest=$latest_digest" >&2
+            exit 1
+          fi

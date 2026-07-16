@@ -3,24 +3,19 @@ name: CI
 on:
   pull_request:
   push:
-    branches: [main, v2]
+    branches: [main]
   workflow_call:
 
 permissions:
   contents: read
 
 jobs:
-  test:
+  frontend:
+    name: Frontend
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-
-      - name: Set up Go
-        uses: actions/setup-go@v5
-        with:
-          go-version: '1.26.x'
-          cache: true
 
       - name: Set up Node.js
         uses: actions/setup-node@v4
@@ -33,15 +28,62 @@ jobs:
         working-directory: frontend
         run: npm ci
 
-      - name: Check frontend
+      - name: Lint, test, and build frontend
         working-directory: frontend
         run: |
           npm run lint
           npm test
           npm run build
 
-      - name: Test Go backend and acceptance features
-        run: go test -race -count=1 ./...
+  go:
+    name: Go unit tests and vet
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
-      - name: Vet Go backend
-        run: go vet ./...
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Test Go packages with the race detector
+        run: >-
+          go test -race -count=1
+          ./cmd/...
+          ./internal/...
+          ./test/fixtures/fakebedrock
+          ./test/fixtures/raknetprobe
+
+      - name: Vet Go backend and test harnesses
+        run: >-
+          go vet
+          ./cmd/...
+          ./internal/...
+          ./acceptance/...
+          ./test/fixtures/fakebedrock
+          ./test/fixtures/raknetprobe
+
+  acceptance:
+    name: Fake Bedrock / ${{ matrix.area }}
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      max-parallel: 4
+      matrix:
+        area: [lifecycle, logging, otel, subpath]
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Go
+        uses: actions/setup-go@v5
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Run ${{ matrix.area }} acceptance scenarios
+        env:
+          GODOG_TAGS: '@${{ matrix.area }}'
+        run: go test -race -v -count=1 ./acceptance

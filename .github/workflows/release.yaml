@@ -1,13 +1,15 @@
-name: Release from Changelog
+name: Release from tested stable image
 
 on:
-  push:
+  workflow_run:
+    workflows: ['Build Montainer (Stable) Image']
+    types: [completed]
     branches: [main]
-    paths:
-      - 'CHANGELOG.md'
 
 permissions:
+  actions: read
   contents: write
+  packages: read
 
 concurrency:
   group: release-from-changelog
@@ -15,38 +17,150 @@ concurrency:
 
 jobs:
   release:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
     runs-on: ubuntu-latest
+    env:
+      REGISTRY_IMAGE: ghcr.io/wasinuddy/montainer-stable
+      STABLE_WORKFLOW_RUN_URL: ${{ github.event.workflow_run.html_url }}
+      TARGET_SHA: ${{ github.event.workflow_run.head_sha }}
     steps:
-      - name: Checkout
+      - name: Checkout the tested commit
         uses: actions/checkout@v4
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 2
 
-      - name: Setup Python
+      - name: Detect a changelog release
+        id: changes
+        shell: bash
+        run: |
+          if git diff --name-only "$TARGET_SHA^" "$TARGET_SHA" | grep -Fxq CHANGELOG.md; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Verify real-image acceptance and promotion
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const runID = context.payload.workflow_run.id;
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runID,
+                filter: 'latest',
+                per_page: 100,
+              },
+            );
+
+            const requiredSuites = [
+              'smoke',
+              'lifecycle',
+              'otel-export',
+              'otel-outage',
+              'otel-flush',
+              'backup',
+              'client',
+            ];
+            const failedOrMissingSuites = requiredSuites.filter((suite) => {
+              const job = jobs.find((candidate) =>
+                candidate.name.includes(`Real image / ${suite}`),
+              );
+              return job?.conclusion !== 'success';
+            });
+            if (failedOrMissingSuites.length > 0) {
+              core.setFailed(
+                `Stable run ${runID} is missing successful real-image shards: ${failedOrMissingSuites.join(', ')}`,
+              );
+              return;
+            }
+
+            const promotionJob = jobs.find((job) =>
+              job.name.includes('Promote tested stable image'),
+            );
+            const digestVerification = promotionJob?.steps?.find(
+              (step) => step.name === 'Verify promoted tags reference the tested digest',
+            );
+            if (
+              promotionJob?.conclusion !== 'success' ||
+              digestVerification?.conclusion !== 'success'
+            ) {
+              core.setFailed(
+                `Stable run ${runID} did not successfully promote and verify the tested digest`,
+              );
+            }
+
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to GHCR
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Resolve the immutable tested image
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          bedrock_version="$(tr -d '\r\n' < versions/stable.txt)"
+          if [[ ! "$bedrock_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid stable Bedrock version: $bedrock_version" >&2
+            exit 1
+          fi
+
+          image_tag="$REGISTRY_IMAGE:$bedrock_version-$TARGET_SHA"
+          image_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image_tag")"
+          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid digest for promoted image $image_tag: $image_digest" >&2
+            exit 1
+          fi
+
+          echo "TESTED_IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
+          echo "TESTED_IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
+          echo "TESTED_IMAGE_REFERENCE=$image_tag@$image_digest" >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        if: steps.changes.outputs.changed == 'true'
         uses: actions/setup-python@v5
         with:
           python-version: '3.12'
 
-      - name: Parse Changelog
-        run: |
-          python .github/scripts/parse_changelog.py
+      - name: Parse changelog
+        if: steps.changes.outputs.changed == 'true'
+        run: python .github/scripts/parse_changelog.py
 
-      - name: Read Changelog Outputs
-        id: read_changelog
+      - name: Read changelog outputs
+        if: steps.changes.outputs.changed == 'true'
         run: |
-          version=$(cat github_action_outputs/version.txt)
-          date=$(cat github_action_outputs/date.txt)
-          details=$(cat github_action_outputs/latest_version_details.txt)
-          echo "VERSION=$version" >> $GITHUB_ENV
-          echo "DATE=$date" >> $GITHUB_ENV
-          echo "DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$details" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          version="$(cat github_action_outputs/version.txt)"
+          date="$(cat github_action_outputs/date.txt)"
+          details="$(cat github_action_outputs/latest_version_details.txt)"
+          echo "VERSION=$version" >> "$GITHUB_ENV"
+          echo "DATE=$date" >> "$GITHUB_ENV"
+          echo 'DETAILS<<EOF' >> "$GITHUB_ENV"
+          echo "$details" >> "$GITHUB_ENV"
+          echo 'EOF' >> "$GITHUB_ENV"
 
-      - name: Create Tag
+      - name: Create immutable release tag
+        if: steps.changes.outputs.changed == 'true'
         uses: actions/github-script@v7
         with:
           script: |
             const version = process.env.VERSION;
             const tagName = `${version}`;
+            const targetSHA = process.env.TARGET_SHA;
 
             if (!/^\d+\.\d+\.\d+$/.test(tagName)) {
               core.setFailed(`Refusing to create invalid release tag: ${tagName}`);
@@ -74,7 +188,7 @@ jobs:
               repo: context.repo.repo,
               tag: tagName,
               message: `Release ${tagName}`,
-              object: context.sha,
+              object: targetSHA,
               type: 'commit',
             });
             await github.rest.git.createRef({
@@ -84,10 +198,19 @@ jobs:
               sha: tag.sha,
             });
 
-
-      - name: Create Release
+      - name: Create GitHub release
+        if: steps.changes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.VERSION }}
           tag_name: ${{ env.VERSION }}
-          body: ${{ env.DETAILS }}
+          body: |
+            ${{ env.DETAILS }}
+
+            ## Tested stable image
+
+            - Immutable tag: `${{ env.TESTED_IMAGE_TAG }}`
+            - Tested digest: `${{ env.TESTED_IMAGE_DIGEST }}`
+            - Deployable reference: `${{ env.TESTED_IMAGE_REFERENCE }}`
+            - Source commit: `${{ env.TARGET_SHA }}`
+            - Acceptance and promotion run: ${{ env.STABLE_WORKFLOW_RUN_URL }}

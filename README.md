@@ -266,7 +266,7 @@ The frontend test suite covers backend URL/error compatibility, UI formatting an
 
 ### Acceptance tests
 
-Godog scenarios build and launch the real `cmd/montainer` process while replacing only the Mojang binary with `test/fixtures/fakebedrock`:
+The fast Godog suite builds and launches the real `cmd/montainer` process while replacing only the Mojang binary with `test/fixtures/fakebedrock`:
 
 ```bash
 go test -v -count=1 ./acceptance
@@ -278,14 +278,32 @@ GODOG_TAGS='@otel' go test -v -count=1 ./acceptance
 
 See [acceptance/README.md](acceptance/README.md) for binary overrides, temporary-workspace diagnostics, and the covered business behavior.
 
+A separate Docker acceptance suite exercises an already-built image with its packaged Mojang binary. It creates an isolated network and container stack per scenario and covers exact-version startup, RakNet discovery, concurrent lifecycle requests, OTLP export (`@otel-export`), Collector outage isolation (`@otel-outage`), shutdown flushing (`@otel-flush`), concurrent MinIO backups, ZIP integrity, and post-backup gameplay readiness. Stable releases also launch an offline virtual Bedrock player that must spawn, appear in the server player list, and receive a teleport movement packet.
+
+```bash
+GODOG_TAGS='@smoke' \
+MONTAINER_ACCEPTANCE_IMAGE='montainer:v2' \
+MONTAINER_EXPECTED_BEDROCK_VERSION="$(cat versions/stable.txt)" \
+  go test -v -count=1 ./acceptance/realimage
+```
+
 ### Build an image
 
 ```bash
-docker build --build-arg SERVER_TYPE=stable -t montainer:v2 .
-docker build --build-arg SERVER_TYPE=preview -t montainer:v2-preview .
+docker build \
+  --build-arg SERVER_TYPE=stable \
+  --build-arg BEDROCK_VERSION="$(cat versions/stable.txt)" \
+  -t montainer:v2 .
+
+docker build \
+  --build-arg SERVER_TYPE=preview \
+  --build-arg BEDROCK_VERSION="$(cat versions/preview.txt)" \
+  -t montainer:v2-preview .
 ```
 
-The multi-stage image builds the React frontend and static Go binary, downloads the pinned stable or preview Bedrock version, and produces a non-root AMD64 Debian runtime. CI runs frontend checks, Go race tests, vet, and acceptance scenarios before the stable or preview image workflow can publish to GHCR.
+The scraper records each channel's version, exact Mojang URL, and archive SHA-256 under `versions/`. The multi-stage build verifies that the URL matches the channel/version and that the downloaded bytes match the pinned checksum before producing the non-root AMD64 Debian runtime.
+
+CI fans the source checks across independent frontend, Go, and four fake-Bedrock acceptance runners. The image workflow then builds and pushes one untagged candidate digest. Stable fans that exact digest out to seven concurrent real-image runners; preview uses six, omitting only the full-client shard. Only after every runner succeeds does a final job attach `latest` and `<bedrock-version>-<commit>` to that same tested digest and verify both tags resolve to it. Manual dispatch defaults to validation-only; promotion requires explicitly enabling `publish` on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
 
 ## Migrating from v1
 

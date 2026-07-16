@@ -2,6 +2,7 @@
 
 ARG GO_VERSION=1.26
 ARG NODE_VERSION=22
+ARG BEDROCK_VERSION=""
 
 FROM --platform=$BUILDPLATFORM node:${NODE_VERSION}-bookworm-slim AS frontend
 WORKDIR /src/frontend
@@ -20,18 +21,26 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o
 
 FROM --platform=linux/amd64 debian:bookworm-slim AS bedrock
 ARG SERVER_TYPE=stable
+ARG BEDROCK_VERSION
 WORKDIR /download
 COPY versions/ /versions/
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl unzip \
     && case "$SERVER_TYPE" in stable|preview) ;; *) echo "SERVER_TYPE must be stable or preview" >&2; exit 2 ;; esac \
     && version="$(cat "/versions/${SERVER_TYPE}.txt")" \
-    && if [ "$SERVER_TYPE" = stable ]; then channel="bin-linux"; else channel="bin-linux-preview"; fi \
+    && if ! printf '%s\n' "$version" | grep -Eq '^[0-9]+(\.[0-9]+){2,3}$'; then echo "invalid Bedrock version: $version" >&2; exit 2; fi \
+    && if [ -n "$BEDROCK_VERSION" ] && [ "$BEDROCK_VERSION" != "$version" ]; then echo "build version $BEDROCK_VERSION does not match scraped version $version" >&2; exit 2; fi \
+    && download_url="$(cat "/versions/${SERVER_TYPE}.url")" \
+    && if [ "$SERVER_TYPE" = stable ]; then expected_url="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${version}.zip"; else expected_url="https://www.minecraft.net/bedrockdedicatedserver/bin-linux-preview/bedrock-server-${version}.zip"; fi \
+    && if [ "$download_url" != "$expected_url" ]; then echo "scraped Bedrock URL does not match channel/version: $download_url" >&2; exit 2; fi \
+    && expected_sha256="$(cat "/versions/${SERVER_TYPE}.sha256")" \
+    && if ! printf '%s\n' "$expected_sha256" | grep -Eq '^[0-9a-f]{64}$'; then echo "invalid Bedrock SHA-256: $expected_sha256" >&2; exit 2; fi \
     && curl --fail --location --http1.1 --retry 5 --retry-all-errors --retry-delay 2 \
        --user-agent "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/96.0.4664.93 Safari/537.36" \
        --connect-timeout 20 --speed-limit 1024 --speed-time 30 --max-time 600 \
        --output /tmp/bedrock.zip \
-       "https://www.minecraft.net/bedrockdedicatedserver/${channel}/bedrock-server-${version}.zip" \
+       "$download_url" \
+    && printf '%s  %s\n' "$expected_sha256" /tmp/bedrock.zip | sha256sum --check --strict - \
     && mkdir -p /out \
     && unzip -q /tmp/bedrock.zip -d /out \
     && chmod 0755 /out/bedrock_server \
@@ -39,7 +48,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 FROM --platform=linux/amd64 debian:bookworm-slim AS runtime
-LABEL org.opencontainers.image.source="https://github.com/WasinUddy/Montainer"
+ARG SERVER_TYPE=stable
+ARG BEDROCK_VERSION="unknown"
+LABEL org.opencontainers.image.source="https://github.com/WasinUddy/Montainer" \
+      org.opencontainers.image.version="$BEDROCK_VERSION" \
+      io.montainer.bedrock.channel="$SERVER_TYPE"
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends ca-certificates curl libcurl4 \
