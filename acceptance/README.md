@@ -71,9 +71,9 @@ Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and
 
 The regular workflow runs frontend, Go, and the four fake-Bedrock tag groups on independent runners. Stable uses seven concurrent real-image runners (`smoke`, `lifecycle`, the three OTLP tags, `backup`, and `client`); preview uses six, omitting only the full virtual client. Publishing follows a fan-out/fan-in pipeline:
 
-1. one runner verifies the recorded URL and SHA-256, builds the Mojang-backed image, and pushes an untagged immutable digest;
+1. one runner verifies the recorded URL and SHA-256, builds the Mojang-backed image under a unique non-release candidate tag, and records its immutable digest;
 2. one runner per real-image business tag pulls and tests that exact digest concurrently; and
 3. only after every shard passes does the promotion runner attach `latest` and the immutable version/commit tag to that same tested digest, then verify both tags resolve to it.
 
 No release tag is built separately from the artifact exercised by acceptance tests.
-Manual workflow dispatches default to validation-only and leave the candidate untagged; a maintainer must explicitly enable the `publish` input on `main` to promote a manually dispatched build.
+Manual workflow dispatches default to validation-only and leave release tags unchanged; a maintainer must explicitly enable the `publish` input on `main` to promote a manually dispatched candidate.

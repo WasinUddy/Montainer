@@ -40,7 +40,7 @@ jobs:
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate scraped Bedrock version
         id: version
@@ -54,31 +54,35 @@ jobs:
           echo "version=$version" >> "$GITHUB_OUTPUT"
 
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR for candidate storage
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Build and push immutable candidate digest
+      - name: Build and push non-release candidate
         id: build
-        uses: docker/build-push-action@v6
+        uses: docker/build-push-action@v7
         with:
           context: .
           platforms: linux/amd64
           build-args: |
             SERVER_TYPE=${{ inputs.server_type }}
             BEDROCK_VERSION=${{ steps.version.outputs.version }}
-          outputs: type=image,name=${{ inputs.registry_image }},push-by-digest=true,name-canonical=true,push=true
+          push: true
+          tags: ${{ inputs.registry_image }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          provenance: false
+          sbom: false
           cache-from: type=gha,scope=${{ inputs.server_type }}
           cache-to: type=gha,mode=max,scope=${{ inputs.server_type }}
 
       - name: Record candidate identity
         run: |
-          echo '### Immutable candidate' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Non-release candidate' >> "$GITHUB_STEP_SUMMARY"
+          echo '${{ inputs.registry_image }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}' >> "$GITHUB_STEP_SUMMARY"
           echo '${{ inputs.registry_image }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
           echo 'Bedrock ${{ steps.version.outputs.version }} (${{ inputs.server_type }})' >> "$GITHUB_STEP_SUMMARY"
 
@@ -102,10 +106,10 @@ jobs:
       MONTAINER_EXPECTED_BEDROCK_VERSION: ${{ needs.build-candidate.outputs.version }}
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Set up Go
-        uses: actions/setup-go@v5
+        uses: actions/setup-go@v7
         with:
           go-version: '1.26.x'
           cache: true
@@ -114,7 +118,7 @@ jobs:
             test/fixtures/bedrockclient/go.sum
 
       - name: Log in to GHCR for the immutable candidate
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
@@ -157,10 +161,10 @@ jobs:
       packages: write
     steps:
       - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v3
+        uses: docker/setup-buildx-action@v4
 
       - name: Log in to GHCR
-        uses: docker/login-action@v3
+        uses: docker/login-action@v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
