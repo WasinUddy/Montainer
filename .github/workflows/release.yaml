@@ -162,10 +162,12 @@ jobs:
 
           recorded_image_id="$(jq --raw-output '.image_id' "$identity_file")"
           recorded_digest="$(jq --raw-output '.manifest_digest' "$identity_file")"
-          echo "RECORDED_IMAGE_ID=$recorded_image_id" >> "$GITHUB_ENV"
-          echo "TESTED_IMAGE_DIGEST=$recorded_digest" >> "$GITHUB_ENV"
-          echo "TESTED_IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
-          echo "TESTED_IMAGE_REFERENCE=$image_tag@$recorded_digest" >> "$GITHUB_ENV"
+          {
+            echo "RECORDED_IMAGE_ID=$recorded_image_id"
+            echo "TESTED_IMAGE_DIGEST=$recorded_digest"
+            echo "TESTED_IMAGE_TAG=$image_tag"
+            echo "TESTED_IMAGE_REFERENCE=$image_tag@$recorded_digest"
+          } >> "$GITHUB_ENV"
 
       - name: Set up Python
         uses: actions/setup-python@v6
@@ -180,11 +182,13 @@ jobs:
           version="$(cat github_action_outputs/version.txt)"
           date="$(cat github_action_outputs/date.txt)"
           details="$(cat github_action_outputs/latest_version_details.txt)"
-          echo "VERSION=$version" >> "$GITHUB_ENV"
-          echo "DATE=$date" >> "$GITHUB_ENV"
-          echo 'DETAILS<<EOF' >> "$GITHUB_ENV"
-          echo "$details" >> "$GITHUB_ENV"
-          echo 'EOF' >> "$GITHUB_ENV"
+          {
+            echo "VERSION=$version"
+            echo "DATE=$date"
+            echo 'DETAILS<<EOF'
+            echo "$details"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
 
       - name: Determine whether the changelog version needs a release
         id: changes

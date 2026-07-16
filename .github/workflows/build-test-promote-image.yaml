@@ -92,9 +92,11 @@ jobs:
           docker save "$candidate_tag" | gzip -1 > "$archive"
           archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
           artifact_name='montainer-candidate-${{ inputs.server_type }}-${{ github.run_id }}-${{ github.run_attempt }}'
-          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
-          echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
-          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          {
+            echo "image_id=$image_id"
+            echo "archive_sha256=$archive_sha256"
+            echo "artifact_name=$artifact_name"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Share the immutable candidate with acceptance runners
         uses: actions/upload-artifact@v7
@@ -106,11 +108,18 @@ jobs:
           compression-level: 0
 
       - name: Record candidate identity
+        env:
+          ARCHIVE_SHA256: ${{ steps.identity.outputs.archive_sha256 }}
+          BEDROCK_VERSION: ${{ steps.version.outputs.version }}
+          IMAGE_ID: ${{ steps.identity.outputs.image_id }}
+          SERVER_TYPE: ${{ inputs.server_type }}
         run: |
-          echo '### Immutable candidate artifact' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Image ID: `${{ steps.identity.outputs.image_id }}`' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Archive SHA-256: `${{ steps.identity.outputs.archive_sha256 }}`' >> "$GITHUB_STEP_SUMMARY"
-          echo 'Bedrock ${{ steps.version.outputs.version }} (${{ inputs.server_type }})' >> "$GITHUB_STEP_SUMMARY"
+          {
+            echo '### Immutable candidate artifact'
+            echo "Image ID: \`$IMAGE_ID\`"
+            echo "Archive SHA-256: \`$ARCHIVE_SHA256\`"
+            echo "Bedrock $BEDROCK_VERSION ($SERVER_TYPE)"
+          } >> "$GITHUB_STEP_SUMMARY"
 
   image-acceptance:
     name: 3 · Accept / ${{ inputs.server_type }} / ${{ matrix.suite }}
@@ -170,7 +179,8 @@ jobs:
         if: failure()
         run: |
           docker ps -a
-          for container in $(docker ps -aq --filter 'name=montainer-'); do
+          mapfile -t containers < <(docker ps -aq --filter 'name=montainer-')
+          for container in "${containers[@]}"; do
             echo "===== $container ====="
             docker logs --tail 500 "$container" || true
           done
@@ -178,10 +188,11 @@ jobs:
       - name: Clean up isolated Docker resources
         if: always()
         run: |
-          containers="$(docker ps -aq --filter 'name=montainer-')"
-          if [ -n "$containers" ]; then
-            docker rm --force --volumes $containers
+          mapfile -t containers < <(docker ps -aq --filter 'name=montainer-')
+          if [ "${#containers[@]}" -gt 0 ]; then
+            docker rm --force --volumes "${containers[@]}"
           fi
-          for network in $(docker network ls -q --filter 'name=montainer-real-'); do
+          mapfile -t networks < <(docker network ls -q --filter 'name=montainer-real-')
+          for network in "${networks[@]}"; do
             docker network rm "$network" || true
           done

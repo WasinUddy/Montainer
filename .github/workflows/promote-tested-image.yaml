@@ -171,8 +171,10 @@ jobs:
             --prefer-index=false \
             --tag "$REGISTRY_IMAGE:latest" \
             "$REGISTRY_IMAGE@$immutable_digest"
-          echo "immutable_tag=$immutable_tag" >> "$GITHUB_OUTPUT"
-          echo "manifest_digest=$immutable_digest" >> "$GITHUB_OUTPUT"
+          {
+            echo "immutable_tag=$immutable_tag"
+            echo "manifest_digest=$immutable_digest"
+          } >> "$GITHUB_OUTPUT"
 
       - name: Verify promoted tags reference the tested image
         id: verify
@@ -231,8 +233,10 @@ jobs:
               workflow_run_attempt: $workflow_run_attempt
             }' > /tmp/montainer-promotion-identity.json
           artifact_name="montainer-promotion-identity-$SERVER_TYPE-$WORKFLOW_RUN_ID-$WORKFLOW_RUN_ATTEMPT"
-          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
-          echo "run_attempt=$WORKFLOW_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+          {
+            echo "artifact_name=$artifact_name"
+            echo "run_attempt=$WORKFLOW_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
           jq --exit-status \
             '.schema_version == 2 and
              (.source_sha | test("^[0-9a-f]{40}$")) and
