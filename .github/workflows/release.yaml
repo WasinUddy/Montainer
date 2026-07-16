@@ -132,23 +132,23 @@ jobs:
             exit 1
           fi
 
-          image_tag="$REGISTRY_IMAGE:$bedrock_version-$TARGET_SHA"
+          image_tag="$REGISTRY_IMAGE:$bedrock_version"
           if ! jq --exit-status \
             --arg source_sha "$TARGET_SHA" \
             --arg source_before "$EXPECTED_SOURCE_BEFORE" \
             --arg server_type stable \
             --arg version "$bedrock_version" \
             --arg registry_image "$REGISTRY_IMAGE" \
-            --arg immutable_tag "$image_tag" \
+            --arg version_tag "$image_tag" \
             --arg run_id "$EXPECTED_RUN_ID" \
             --arg run_attempt "$EXPECTED_RUN_ATTEMPT" \
-            '.schema_version == 2 and
+            '.schema_version == 3 and
              .source_sha == $source_sha and
              .source_before == $source_before and
              .server_type == $server_type and
              .version == $version and
              .registry_image == $registry_image and
-             .immutable_tag == $immutable_tag and
+             .version_tag == $version_tag and
              .workflow_run_id == $run_id and
              .workflow_run_attempt == $run_attempt and
              (.source_before | test("^[0-9a-f]{40}$")) and
@@ -275,7 +275,7 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Verify the immutable promoted image identity
+      - name: Verify the Minecraft-version promoted image identity
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
@@ -370,8 +370,8 @@ jobs:
 
             ## Tested stable image
 
-            - Immutable tag: `${{ env.TESTED_IMAGE_TAG }}`
+            - Minecraft version tag: `${{ env.TESTED_IMAGE_TAG }}`
             - Tested digest: `${{ env.TESTED_IMAGE_DIGEST }}`
-            - Deployable reference: `${{ env.TESTED_IMAGE_REFERENCE }}`
+            - Digest-pinned reference: `${{ env.TESTED_IMAGE_REFERENCE }}`
             - Source commit: `${{ env.TARGET_SHA }}`
             - Acceptance and promotion run: ${{ env.STABLE_WORKFLOW_RUN_URL }}

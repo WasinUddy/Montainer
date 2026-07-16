@@ -138,70 +138,53 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          immutable_tag="$REGISTRY_IMAGE:$VERSION-${{ github.sha }}"
-          inspect_error="$(mktemp)"
-          immutable_exists=false
-          if immutable_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag" 2>"$inspect_error")"; then
-            immutable_exists=true
-            immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
-            if [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ]; then
-              echo "Refusing to overwrite immutable tag $immutable_tag ($immutable_image_id != $EXPECTED_IMAGE_ID)" >&2
-              exit 1
-            fi
-          elif ! grep --extended-regexp --ignore-case --quiet 'manifest unknown|not found' "$inspect_error"; then
-            cat "$inspect_error" >&2
-            exit 1
-          fi
-          rm --force "$inspect_error"
+          version_tag="$REGISTRY_IMAGE:$VERSION"
+          docker tag "$CANDIDATE_TAG" "$version_tag"
+          docker push "$version_tag"
 
-          if [ "$immutable_exists" = false ]; then
-            docker tag "$CANDIDATE_TAG" "$immutable_tag"
-            docker push "$immutable_tag"
-          fi
-
-          immutable_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag")"
-          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
-          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_tag")"
-          if [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || [[ ! "$immutable_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "Invalid immutable image identity: image=$immutable_image_id digest=$immutable_digest" >&2
+          version_manifest="$(docker buildx imagetools inspect --raw "$version_tag")"
+          version_image_id="$(jq --raw-output '.config.digest // empty' <<< "$version_manifest")"
+          version_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$version_tag")"
+          if [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] || [[ ! "$version_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid Minecraft-version image identity: image=$version_image_id digest=$version_digest" >&2
             exit 1
           fi
 
           docker buildx imagetools create \
             --prefer-index=false \
             --tag "$REGISTRY_IMAGE:latest" \
-            "$REGISTRY_IMAGE@$immutable_digest"
+            "$REGISTRY_IMAGE@$version_digest"
           {
-            echo "immutable_tag=$immutable_tag"
-            echo "manifest_digest=$immutable_digest"
+            echo "version_tag=$version_tag"
+            echo "manifest_digest=$version_digest"
           } >> "$GITHUB_OUTPUT"
 
       - name: Verify promoted tags reference the tested image
         id: verify
         shell: bash
         env:
-          IMMUTABLE_TAG: ${{ steps.publish.outputs.immutable_tag }}
+          VERSION_TAG: ${{ steps.publish.outputs.version_tag }}
         run: |
           set -euo pipefail
-          immutable_manifest="$(docker buildx imagetools inspect --raw "$IMMUTABLE_TAG")"
+          version_manifest="$(docker buildx imagetools inspect --raw "$VERSION_TAG")"
           latest_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:latest")"
-          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMMUTABLE_TAG")"
+          version_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$VERSION_TAG")"
           latest_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:latest")"
-          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
+          version_image_id="$(jq --raw-output '.config.digest // empty' <<< "$version_manifest")"
           latest_image_id="$(jq --raw-output '.config.digest // empty' <<< "$latest_manifest")"
-          if [ "$immutable_digest" != "$latest_digest" ] || \
-             [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || \
+          if [ "$version_digest" != "$latest_digest" ] || \
+             [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] || \
              [ "$latest_image_id" != "$EXPECTED_IMAGE_ID" ]; then
-            echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID immutable=$immutable_image_id@$immutable_digest latest=$latest_image_id@$latest_digest" >&2
+            echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID version=$version_image_id@$version_digest latest=$latest_image_id@$latest_digest" >&2
             exit 1
           fi
-          echo "manifest_digest=$immutable_digest" >> "$GITHUB_OUTPUT"
+          echo "manifest_digest=$version_digest" >> "$GITHUB_OUTPUT"
 
       - name: Record the promoted image identity
         id: identity
         shell: bash
         env:
-          IMMUTABLE_TAG: ${{ steps.publish.outputs.immutable_tag }}
+          VERSION_TAG: ${{ steps.publish.outputs.version_tag }}
           MANIFEST_DIGEST: ${{ steps.verify.outputs.manifest_digest }}
           SOURCE_SHA: ${{ github.sha }}
           WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
@@ -214,19 +197,19 @@ jobs:
             --arg server_type "$SERVER_TYPE" \
             --arg version "$VERSION" \
             --arg registry_image "$REGISTRY_IMAGE" \
-            --arg immutable_tag "$IMMUTABLE_TAG" \
+            --arg version_tag "$VERSION_TAG" \
             --arg image_id "$EXPECTED_IMAGE_ID" \
             --arg manifest_digest "$MANIFEST_DIGEST" \
             --arg workflow_run_id "$WORKFLOW_RUN_ID" \
             --arg workflow_run_attempt "$WORKFLOW_RUN_ATTEMPT" \
             '{
-              schema_version: 2,
+              schema_version: 3,
               source_sha: $source_sha,
               source_before: $source_before,
               server_type: $server_type,
               version: $version,
               registry_image: $registry_image,
-              immutable_tag: $immutable_tag,
+              version_tag: $version_tag,
               image_id: $image_id,
               manifest_digest: $manifest_digest,
               workflow_run_id: $workflow_run_id,
@@ -238,9 +221,10 @@ jobs:
             echo "run_attempt=$WORKFLOW_RUN_ATTEMPT"
           } >> "$GITHUB_OUTPUT"
           jq --exit-status \
-            '.schema_version == 2 and
+            '.schema_version == 3 and
              (.source_sha | test("^[0-9a-f]{40}$")) and
-             (.source_before | test("^[0-9a-f]{40}$"))' \
+             (.source_before | test("^[0-9a-f]{40}$")) and
+             .version_tag == (.registry_image + ":" + .version)' \
             /tmp/montainer-promotion-identity.json >/dev/null
 
       - name: Publish the promotion identity record

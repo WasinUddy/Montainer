@@ -1,5 +1,10 @@
 # Changelog
 
+## [3.0.1] - 2026-07-16
+### Fixed
+- Publish stable and preview images under the exact Minecraft Bedrock version (for example, `1.26.33.2`) instead of a version/commit composite tag.
+- Overwrite the Minecraft-version tag only after the rebuilt image passes the full acceptance matrix, keep `latest` on the same manifest, and record a digest-pinned reference in each GitHub release.
+
 ## [3.0.0] - 2026-07-16
 ### Highlights
 - Rebuilt Montainer's backend in Go 1.26 with Gin, replacing the Python/FastAPI runtime with a concurrency-safe Bedrock process supervisor.
