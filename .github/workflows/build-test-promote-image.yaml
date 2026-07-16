@@ -29,14 +29,14 @@ permissions:
 
 jobs:
   build-candidate:
-    name: Build immutable ${{ inputs.server_type }} candidate
+    name: Build immutable ${{ inputs.server_type }} candidate artifact
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
       contents: read
-      packages: write
     outputs:
-      digest: ${{ steps.build.outputs.digest }}
+      archive_sha256: ${{ steps.identity.outputs.archive_sha256 }}
+      image_id: ${{ steps.identity.outputs.image_id }}
       version: ${{ steps.version.outputs.version }}
     steps:
       - name: Checkout repository
@@ -56,15 +56,7 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
-      - name: Log in to GHCR for candidate storage
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push non-release candidate
-        id: build
+      - name: Build the candidate once
         uses: docker/build-push-action@v7
         with:
           context: .
@@ -72,18 +64,44 @@ jobs:
           build-args: |
             SERVER_TYPE=${{ inputs.server_type }}
             BEDROCK_VERSION=${{ steps.version.outputs.version }}
-          push: true
-          tags: ${{ inputs.registry_image }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          load: true
+          tags: montainer-candidate:${{ github.sha }}
           provenance: false
           sbom: false
           cache-from: type=gha,scope=${{ inputs.server_type }}
           cache-to: type=gha,mode=max,scope=${{ inputs.server_type }}
 
+      - name: Record and archive the exact candidate
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_tag='montainer-candidate:${{ github.sha }}'
+          archive='/tmp/montainer-candidate.tar.gz'
+          image_id="$(docker image inspect --format '{{.Id}}' "$candidate_tag")"
+          if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid candidate image ID: $image_id" >&2
+            exit 1
+          fi
+          docker save "$candidate_tag" | gzip -1 > "$archive"
+          archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
+          echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
+
+      - name: Share the immutable candidate with acceptance runners
+        uses: actions/upload-artifact@v7
+        with:
+          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/montainer-candidate.tar.gz
+          if-no-files-found: error
+          retention-days: 1
+          compression-level: 0
+
       - name: Record candidate identity
         run: |
-          echo '### Non-release candidate' >> "$GITHUB_STEP_SUMMARY"
-          echo '${{ inputs.registry_image }}:candidate-${{ github.run_id }}-${{ github.run_attempt }}' >> "$GITHUB_STEP_SUMMARY"
-          echo '${{ inputs.registry_image }}@${{ steps.build.outputs.digest }}' >> "$GITHUB_STEP_SUMMARY"
+          echo '### Immutable candidate artifact' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Image ID: `${{ steps.identity.outputs.image_id }}`' >> "$GITHUB_STEP_SUMMARY"
+          echo 'Archive SHA-256: `${{ steps.identity.outputs.archive_sha256 }}`' >> "$GITHUB_STEP_SUMMARY"
           echo 'Bedrock ${{ steps.version.outputs.version }} (${{ inputs.server_type }})' >> "$GITHUB_STEP_SUMMARY"
 
   image-acceptance:
@@ -93,16 +111,18 @@ jobs:
     timeout-minutes: 30
     permissions:
       contents: read
-      packages: read
     strategy:
       fail-fast: false
       max-parallel: 8
       matrix:
         suite: ${{ fromJSON(inputs.acceptance_suites) }}
     env:
-      CANDIDATE_IMAGE: ${{ inputs.registry_image }}@${{ needs.build-candidate.outputs.digest }}
+      CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
+      CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
+      EXPECTED_ARCHIVE_SHA256: ${{ needs.build-candidate.outputs.archive_sha256 }}
+      EXPECTED_IMAGE_ID: ${{ needs.build-candidate.outputs.image_id }}
       GODOG_TAGS: '@${{ matrix.suite }}'
-      MONTAINER_ACCEPTANCE_IMAGE: ${{ inputs.registry_image }}@${{ needs.build-candidate.outputs.digest }}
+      MONTAINER_ACCEPTANCE_IMAGE: montainer-candidate:${{ github.sha }}
       MONTAINER_EXPECTED_BEDROCK_VERSION: ${{ needs.build-candidate.outputs.version }}
     steps:
       - name: Checkout repository
@@ -117,15 +137,23 @@ jobs:
             go.sum
             test/fixtures/bedrockclient/go.sum
 
-      - name: Log in to GHCR for the immutable candidate
-        uses: docker/login-action@v4
+      - name: Download the exact candidate artifact
+        uses: actions/download-artifact@v8
         with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
+          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/montainer-candidate
 
-      - name: Pull the exact candidate digest
-        run: docker pull "$CANDIDATE_IMAGE"
+      - name: Verify and load the exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$CANDIDATE_ARCHIVE" | sha256sum --check --strict -
+          gzip --decompress --stdout "$CANDIDATE_ARCHIVE" | docker load
+          actual_image_id="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_TAG")"
+          if [ "$actual_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Candidate image ID mismatch: expected=$EXPECTED_IMAGE_ID actual=$actual_image_id" >&2
+            exit 1
+          fi
 
       - name: Run ${{ matrix.suite }} real-image acceptance scenarios
         run: go test -v -count=1 ./acceptance/realimage
@@ -159,7 +187,30 @@ jobs:
     permissions:
       contents: read
       packages: write
+    env:
+      CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
+      CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
+      EXPECTED_ARCHIVE_SHA256: ${{ needs.build-candidate.outputs.archive_sha256 }}
+      EXPECTED_IMAGE_ID: ${{ needs.build-candidate.outputs.image_id }}
     steps:
+      - name: Download the accepted candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          path: /tmp/montainer-candidate
+
+      - name: Verify and load the accepted candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$CANDIDATE_ARCHIVE" | sha256sum --check --strict -
+          gzip --decompress --stdout "$CANDIDATE_ARCHIVE" | docker load
+          actual_image_id="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_TAG")"
+          if [ "$actual_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Candidate image ID mismatch: expected=$EXPECTED_IMAGE_ID actual=$actual_image_id" >&2
+            exit 1
+          fi
+
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v4
 
@@ -170,33 +221,45 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Apply release tags to the tested digest
+      - name: Apply release tags to the tested image
         env:
-          DIGEST: ${{ needs.build-candidate.outputs.digest }}
           VERSION: ${{ needs.build-candidate.outputs.version }}
           REGISTRY_IMAGE: ${{ inputs.registry_image }}
         run: |
+          set -euo pipefail
           immutable_tag="$REGISTRY_IMAGE:$VERSION-${{ github.sha }}"
-          existing_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_tag" 2>/dev/null || true)"
-          if [ -n "$existing_digest" ] && [ "$existing_digest" != "$DIGEST" ]; then
-            echo "Refusing to overwrite immutable tag $immutable_tag ($existing_digest != $DIGEST)" >&2
+          inspect_error="$(mktemp)"
+          if existing_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag" 2>"$inspect_error")"; then
+            existing_image_id="$(jq --raw-output '.config.digest // empty' <<< "$existing_manifest")"
+            if [ "$existing_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+              echo "Refusing to overwrite immutable tag $immutable_tag ($existing_image_id != $EXPECTED_IMAGE_ID)" >&2
+              exit 1
+            fi
+          elif ! grep --extended-regexp --ignore-case --quiet 'manifest unknown|not found' "$inspect_error"; then
+            cat "$inspect_error" >&2
             exit 1
           fi
-          docker buildx imagetools create \
-            --prefer-index=false \
-            --tag "$REGISTRY_IMAGE:latest" \
-            --tag "$immutable_tag" \
-            "$REGISTRY_IMAGE@$DIGEST"
+          rm --force "$inspect_error"
+          docker tag "$CANDIDATE_TAG" "$immutable_tag"
+          docker tag "$CANDIDATE_TAG" "$REGISTRY_IMAGE:latest"
+          docker push "$immutable_tag"
+          docker push "$REGISTRY_IMAGE:latest"
 
-      - name: Verify promoted tags reference the tested digest
+      - name: Verify promoted tags reference the tested image
         env:
-          DIGEST: ${{ needs.build-candidate.outputs.digest }}
           VERSION: ${{ needs.build-candidate.outputs.version }}
           REGISTRY_IMAGE: ${{ inputs.registry_image }}
         run: |
+          set -euo pipefail
+          immutable_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:$VERSION-${{ github.sha }}")"
+          latest_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:latest")"
           immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:$VERSION-${{ github.sha }}")"
           latest_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:latest")"
-          if [ "$immutable_digest" != "$DIGEST" ] || [ "$latest_digest" != "$DIGEST" ]; then
-            echo "Promotion digest mismatch: candidate=$DIGEST immutable=$immutable_digest latest=$latest_digest" >&2
+          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
+          latest_image_id="$(jq --raw-output '.config.digest // empty' <<< "$latest_manifest")"
+          if [ "$immutable_digest" != "$latest_digest" ] || \
+             [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || \
+             [ "$latest_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID immutable=$immutable_image_id@$immutable_digest latest=$latest_image_id@$latest_digest" >&2
             exit 1
           fi

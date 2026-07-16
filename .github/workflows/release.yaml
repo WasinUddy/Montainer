@@ -87,14 +87,14 @@ jobs:
               job.name.includes('Promote tested stable image'),
             );
             const digestVerification = promotionJob?.steps?.find(
-              (step) => step.name === 'Verify promoted tags reference the tested digest',
+              (step) => step.name === 'Verify promoted tags reference the tested image',
             );
             if (
               promotionJob?.conclusion !== 'success' ||
               digestVerification?.conclusion !== 'success'
             ) {
               core.setFailed(
-                `Stable run ${runID} did not successfully promote and verify the tested digest`,
+                `Stable run ${runID} did not successfully promote and verify the tested image`,
               );
             }
 
