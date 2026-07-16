@@ -1,0 +1,15 @@
+services:
+  montainer:
+    environment:
+      OTEL_EXPORTER_OTLP_ENDPOINT: http://otel-collector:4318
+      OTEL_EXPORTER_OTLP_PROTOCOL: http/protobuf
+      OTEL_SERVICE_NAME: montainer
+      OTEL_RESOURCE_ATTRIBUTES: deployment.environment.name=compose
+      OTEL_EXPORTER_OTLP_LOGS_TIMEOUT: "2000"
+
+  otel-collector:
+    image: otel/opentelemetry-collector-contrib:0.156.0
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel-collector.yaml:/etc/otelcol-contrib/config.yaml:ro
+    restart: unless-stopped

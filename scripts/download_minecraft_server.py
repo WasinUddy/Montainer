@@ -1,8 +1,8 @@
 import os
 import argparse
-import requests
 import zipfile
 import io
+from urllib.request import Request, urlopen
 
 def main():
     parser = argparse.ArgumentParser(description="Download Minecraft Bedrock Server from Mojang server.")
@@ -23,12 +23,13 @@ def main():
 
     # Download and extract server
     print(f"Downloading {url}...")
-    response = requests.get(url, headers=headers)
-    response.raise_for_status()
+    request = Request(url, headers=headers)
+    with urlopen(request, timeout=600) as response:
+        archive = response.read()
 
     # Extract to cwd as bedrock_server
     print("Extracting...")
-    with zipfile.ZipFile(io.BytesIO(response.content)) as z:
+    with zipfile.ZipFile(io.BytesIO(archive)) as z:
         z.extractall("bedrock_server")
 
     # Set executable permissions for the server file

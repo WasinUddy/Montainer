@@ -2,9 +2,16 @@ name: Release from Changelog
 
 on:
   push:
+    branches: [main]
     paths:
       - 'CHANGELOG.md'
 
+permissions:
+  contents: write
+
+concurrency:
+  group: release-from-changelog
+  cancel-in-progress: false
 
 jobs:
   release:
@@ -40,6 +47,28 @@ jobs:
           script: |
             const version = process.env.VERSION;
             const tagName = `${version}`;
+
+            if (!/^\d+\.\d+\.\d+$/.test(tagName)) {
+              core.setFailed(`Refusing to create invalid release tag: ${tagName}`);
+              return;
+            }
+
+            try {
+              const { data: existingRef } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tagName}`,
+              });
+              core.setFailed(
+                `Refusing to overwrite existing tag ${tagName} at ${existingRef.object.sha}`,
+              );
+              return;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
             const { data: tag } = await github.rest.git.createTag({
               owner: context.repo.owner,
               repo: context.repo.repo,

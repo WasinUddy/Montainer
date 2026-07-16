@@ -1,65 +1,65 @@
 name: Build Montainer (Preview) Image
 
 on:
-    push:
-        paths:
-            - 'Dockerfile'
-            - 'versions/preview.txt'
-            - '.github/workflows/build-montainer-preview-image.yaml'
-    workflow_dispatch:
+  push:
+    branches: [main]
+    paths:
+      - 'cmd/**'
+      - 'internal/**'
+      - 'frontend/**'
+      - 'go.mod'
+      - 'go.sum'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'versions/preview.txt'
+      - '.github/workflows/build-montainer-preview-image.yaml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: montainer-preview-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-    build:
-        runs-on: ubuntu-latest
-        strategy:
-            fail-fast: true # Stop all jobs if one fails
+  test:
+    permissions:
+      contents: read
+    uses: ./.github/workflows/ci.yaml
 
-        steps:
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
 
+      - name: Read Bedrock version
+        run: echo "PREVIEW_VERSION=$(cat versions/preview.txt)" >> "$GITHUB_ENV"
 
-            - name: Checkout Repository
-              uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
 
-            - name: Set up Python 3.12
-              uses: actions/setup-python@v5
-              with:
-                python-version: 3.12
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
-            - name: Set up Node.js 20.x
-              uses: actions/setup-node@v4
-              with:
-                node-version: 20.x
-
-            - name: Download and Extract Minecraft Server
-              run: |
-                python3 -m pip install --upgrade pip
-                python3 -m pip install requests==2.31.0
-                python3 scripts/download_minecraft_server.py --type=preview
-
-            - name: Build frontend web static
-              run: |
-                cd frontend
-                npm install
-                npm run build
-
-            - name: Fetch Versions
-              run: |
-                echo "PREVIEW_VERSION=$(cat versions/preview.txt)" >> $GITHUB_ENV
-
-            - name: Set up Docker Buildx
-              uses: docker/setup-buildx-action@v3
-
-            - name: Login to GHCR
-              uses: docker/login-action@v3
-              with:
-                registry: ghcr.io
-                username: ${{ github.repository_owner }}
-                password: ${{ secrets.PAT }}
-
-
-            - name: Build Montainer (preview) Image
-              run: |
-                docker build .  --tag ghcr.io/wasinuddy/montainer-preview:latest --tag ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
-                docker push ghcr.io/wasinuddy/montainer-preview:latest
-                docker push ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}
-
+      - name: Build and publish preview image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          platforms: linux/amd64
+          push: true
+          build-args: SERVER_TYPE=preview
+          tags: |
+            ghcr.io/wasinuddy/montainer-preview:latest
+            ghcr.io/wasinuddy/montainer-preview:${{ env.PREVIEW_VERSION }}-${{ github.sha }}
+          cache-from: type=gha,scope=preview
+          cache-to: type=gha,mode=max,scope=preview
