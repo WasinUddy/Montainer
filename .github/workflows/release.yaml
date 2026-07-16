@@ -32,20 +32,9 @@ jobs:
         uses: actions/checkout@v7
         with:
           ref: ${{ env.TARGET_SHA }}
-          fetch-depth: 2
-
-      - name: Detect a changelog release
-        id: changes
-        shell: bash
-        run: |
-          if git diff --name-only "$TARGET_SHA^" "$TARGET_SHA" | grep -Fxq CHANGELOG.md; then
-            echo 'changed=true' >> "$GITHUB_OUTPUT"
-          else
-            echo 'changed=false' >> "$GITHUB_OUTPUT"
-          fi
+          fetch-depth: 0
 
       - name: Verify real-image acceptance and promotion
-        if: steps.changes.outputs.changed == 'true'
         uses: actions/github-script@v9
         with:
           script: |
@@ -89,14 +78,90 @@ jobs:
             const digestVerification = promotionJob?.steps?.find(
               (step) => step.name === 'Verify promoted tags reference the tested image',
             );
+            const identityPublication = promotionJob?.steps?.find(
+              (step) => step.name === 'Publish the promotion identity record',
+            );
             if (
               promotionJob?.conclusion !== 'success' ||
-              digestVerification?.conclusion !== 'success'
+              digestVerification?.conclusion !== 'success' ||
+              identityPublication?.conclusion !== 'success'
             ) {
               core.setFailed(
                 `Stable run ${runID} did not successfully promote and verify the tested image`,
               );
             }
+
+      - name: Download the promotion identity record
+        uses: actions/download-artifact@v8
+        with:
+          name: montainer-promotion-identity-${{ github.event.workflow_run.id }}-${{ github.event.workflow_run.run_attempt }}
+          path: /tmp/montainer-promotion
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          repository: ${{ github.repository }}
+          run-id: ${{ github.event.workflow_run.id }}
+
+      - name: Validate promotion identity and detect a changelog release
+        id: changes
+        shell: bash
+        env:
+          EXPECTED_RUN_ATTEMPT: ${{ github.event.workflow_run.run_attempt }}
+          EXPECTED_RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -euo pipefail
+          identity_file='/tmp/montainer-promotion/montainer-promotion-identity.json'
+          bedrock_version="$(tr -d '\r\n' < versions/stable.txt)"
+          if [[ ! "$bedrock_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid stable Bedrock version: $bedrock_version" >&2
+            exit 1
+          fi
+
+          image_tag="$REGISTRY_IMAGE:$bedrock_version-$TARGET_SHA"
+          if ! jq --exit-status \
+            --arg source_sha "$TARGET_SHA" \
+            --arg server_type stable \
+            --arg version "$bedrock_version" \
+            --arg registry_image "$REGISTRY_IMAGE" \
+            --arg immutable_tag "$image_tag" \
+            --arg run_id "$EXPECTED_RUN_ID" \
+            --arg run_attempt "$EXPECTED_RUN_ATTEMPT" \
+            '.schema_version == 2 and
+             .source_sha == $source_sha and
+             .server_type == $server_type and
+             .version == $version and
+             .registry_image == $registry_image and
+             .immutable_tag == $immutable_tag and
+             .workflow_run_id == $run_id and
+             .workflow_run_attempt == $run_attempt and
+             (.source_before | test("^[0-9a-f]{40}$")) and
+             .source_before != "0000000000000000000000000000000000000000" and
+             (.image_id | test("^sha256:[0-9a-f]{64}$")) and
+             (.manifest_digest | test("^sha256:[0-9a-f]{64}$"))' \
+            "$identity_file" >/dev/null; then
+            echo 'Promotion identity does not match this stable workflow run.' >&2
+            exit 1
+          fi
+
+          source_before="$(jq --raw-output '.source_before' "$identity_file")"
+          if ! git cat-file -e "$source_before^{commit}" 2>/dev/null; then
+            git fetch --no-tags --depth=1 origin "$source_before"
+          fi
+          if ! git merge-base --is-ancestor "$source_before" "$TARGET_SHA"; then
+            echo "Push start $source_before is not an ancestor of tested commit $TARGET_SHA" >&2
+            exit 1
+          fi
+          changed_files="$(git diff --name-only "$source_before" "$TARGET_SHA")"
+          if grep -Fxq CHANGELOG.md <<< "$changed_files"; then
+            echo 'changed=true' >> "$GITHUB_OUTPUT"
+          else
+            echo 'changed=false' >> "$GITHUB_OUTPUT"
+          fi
+
+          recorded_image_id="$(jq --raw-output '.image_id' "$identity_file")"
+          recorded_digest="$(jq --raw-output '.manifest_digest' "$identity_file")"
+          echo "RECORDED_IMAGE_ID=$recorded_image_id" >> "$GITHUB_ENV"
+          echo "TESTED_IMAGE_DIGEST=$recorded_digest" >> "$GITHUB_ENV"
+          echo "TESTED_IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
+          echo "TESTED_IMAGE_REFERENCE=$image_tag@$recorded_digest" >> "$GITHUB_ENV"
 
       - name: Set up Docker Buildx
         if: steps.changes.outputs.changed == 'true'
@@ -110,26 +175,18 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Resolve the immutable tested image
+      - name: Verify the immutable promoted image identity
         if: steps.changes.outputs.changed == 'true'
         shell: bash
         run: |
-          bedrock_version="$(tr -d '\r\n' < versions/stable.txt)"
-          if [[ ! "$bedrock_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
-            echo "Invalid stable Bedrock version: $bedrock_version" >&2
+          set -euo pipefail
+          current_manifest="$(docker buildx imagetools inspect --raw "$TESTED_IMAGE_TAG")"
+          current_image_id="$(jq --raw-output '.config.digest // empty' <<< "$current_manifest")"
+          current_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$TESTED_IMAGE_TAG")"
+          if [ "$current_image_id" != "$RECORDED_IMAGE_ID" ] || [ "$current_digest" != "$TESTED_IMAGE_DIGEST" ]; then
+            echo "Promoted image changed after acceptance: recorded=$RECORDED_IMAGE_ID@$TESTED_IMAGE_DIGEST current=$current_image_id@$current_digest" >&2
             exit 1
           fi
-
-          image_tag="$REGISTRY_IMAGE:$bedrock_version-$TARGET_SHA"
-          image_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$image_tag")"
-          if [[ ! "$image_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
-            echo "Invalid digest for promoted image $image_tag: $image_digest" >&2
-            exit 1
-          fi
-
-          echo "TESTED_IMAGE_DIGEST=$image_digest" >> "$GITHUB_ENV"
-          echo "TESTED_IMAGE_TAG=$image_tag" >> "$GITHUB_ENV"
-          echo "TESTED_IMAGE_REFERENCE=$image_tag@$image_digest" >> "$GITHUB_ENV"
 
       - name: Set up Python
         if: steps.changes.outputs.changed == 'true'
@@ -173,9 +230,35 @@ jobs:
                 repo: context.repo.repo,
                 ref: `tags/${tagName}`,
               });
-              core.setFailed(
-                `Refusing to overwrite existing tag ${tagName} at ${existingRef.object.sha}`,
-              );
+              let existingTargetSHA;
+              if (existingRef.object.type === 'commit') {
+                existingTargetSHA = existingRef.object.sha;
+              } else if (existingRef.object.type === 'tag') {
+                const { data: existingTag } = await github.rest.git.getTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_sha: existingRef.object.sha,
+                });
+                if (existingTag.object.type !== 'commit') {
+                  core.setFailed(
+                    `Existing tag ${tagName} does not resolve directly to a commit`,
+                  );
+                  return;
+                }
+                existingTargetSHA = existingTag.object.sha;
+              } else {
+                core.setFailed(
+                  `Existing tag ${tagName} has unsupported object type ${existingRef.object.type}`,
+                );
+                return;
+              }
+              if (existingTargetSHA !== targetSHA) {
+                core.setFailed(
+                  `Refusing to move existing tag ${tagName} from ${existingTargetSHA} to ${targetSHA}`,
+                );
+                return;
+              }
+              core.info(`Release tag ${tagName} already targets ${targetSHA}`);
               return;
             } catch (error) {
               if (error.status !== 404) {

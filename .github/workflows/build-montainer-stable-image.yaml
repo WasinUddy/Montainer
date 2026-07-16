@@ -20,6 +20,7 @@ on:
       - 'versions/stable.sha256'
       - '.github/workflows/ci.yaml'
       - '.github/workflows/build-test-promote-image.yaml'
+      - '.github/workflows/promote-tested-image.yaml'
       - '.github/workflows/build-montainer-stable-image.yaml'
   workflow_dispatch:
     inputs:
@@ -44,15 +45,29 @@ jobs:
     uses: ./.github/workflows/ci.yaml
 
   image:
-    name: Build, acceptance-test, and promote stable
+    name: Build and acceptance-test stable
     needs: quality
     permissions:
       contents: read
-      packages: write
     uses: ./.github/workflows/build-test-promote-image.yaml
     with:
       server_type: stable
       version_file: versions/stable.txt
-      registry_image: ghcr.io/wasinuddy/montainer-stable
       acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup", "client"]'
-      publish: ${{ github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish) }}
+
+  promote:
+    name: Promote accepted stable image
+    needs: image
+    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+    permissions:
+      contents: read
+      packages: write
+    uses: ./.github/workflows/promote-tested-image.yaml
+    with:
+      server_type: stable
+      source_before: ${{ github.event.before || github.sha }}
+      artifact_name: ${{ needs.image.outputs.artifact_name }}
+      archive_sha256: ${{ needs.image.outputs.archive_sha256 }}
+      image_id: ${{ needs.image.outputs.image_id }}
+      version: ${{ needs.image.outputs.version }}
+      registry_image: ghcr.io/wasinuddy/montainer-stable

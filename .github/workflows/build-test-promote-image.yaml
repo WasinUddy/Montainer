@@ -1,4 +1,4 @@
-name: Build, test, and promote Montainer image
+name: Build and acceptance-test Montainer image
 
 on:
   workflow_call:
@@ -11,18 +11,23 @@ on:
         description: Repository file containing the scraped Bedrock version
         required: true
         type: string
-      registry_image:
-        description: GHCR image name without a tag
-        required: true
-        type: string
       acceptance_suites:
         description: JSON array of real-image Godog tags to fan out across runners
         required: true
         type: string
-      publish:
-        description: Apply release tags after every acceptance shard passes
-        required: true
-        type: boolean
+    outputs:
+      archive_sha256:
+        description: SHA-256 of the accepted Docker archive
+        value: ${{ jobs.build-candidate.outputs.archive_sha256 }}
+      artifact_name:
+        description: Actions artifact containing the accepted Docker archive
+        value: ${{ jobs.build-candidate.outputs.artifact_name }}
+      image_id:
+        description: Docker image ID shared by every acceptance runner
+        value: ${{ jobs.build-candidate.outputs.image_id }}
+      version:
+        description: Validated Mojang Bedrock version in the image
+        value: ${{ jobs.build-candidate.outputs.version }}
 
 permissions:
   contents: read
@@ -36,6 +41,7 @@ jobs:
       contents: read
     outputs:
       archive_sha256: ${{ steps.identity.outputs.archive_sha256 }}
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
       image_id: ${{ steps.identity.outputs.image_id }}
       version: ${{ steps.version.outputs.version }}
     steps:
@@ -85,16 +91,18 @@ jobs:
           fi
           docker save "$candidate_tag" | gzip -1 > "$archive"
           archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          artifact_name='montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}'
           echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
           echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
 
       - name: Share the immutable candidate with acceptance runners
         uses: actions/upload-artifact@v7
         with:
-          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.identity.outputs.artifact_name }}
           path: /tmp/montainer-candidate.tar.gz
           if-no-files-found: error
-          retention-days: 1
+          retention-days: 7
           compression-level: 0
 
       - name: Record candidate identity
@@ -140,7 +148,7 @@ jobs:
       - name: Download the exact candidate artifact
         uses: actions/download-artifact@v8
         with:
-          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ needs.build-candidate.outputs.artifact_name }}
           path: /tmp/montainer-candidate
 
       - name: Verify and load the exact candidate
@@ -177,89 +185,3 @@ jobs:
           for network in $(docker network ls -q --filter 'name=montainer-real-'); do
             docker network rm "$network" || true
           done
-
-  promote:
-    name: Promote tested ${{ inputs.server_type }} image
-    needs: [build-candidate, image-acceptance]
-    if: inputs.publish
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      contents: read
-      packages: write
-    env:
-      CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
-      CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
-      EXPECTED_ARCHIVE_SHA256: ${{ needs.build-candidate.outputs.archive_sha256 }}
-      EXPECTED_IMAGE_ID: ${{ needs.build-candidate.outputs.image_id }}
-    steps:
-      - name: Download the accepted candidate artifact
-        uses: actions/download-artifact@v8
-        with:
-          name: montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}
-          path: /tmp/montainer-candidate
-
-      - name: Verify and load the accepted candidate
-        shell: bash
-        run: |
-          set -euo pipefail
-          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$CANDIDATE_ARCHIVE" | sha256sum --check --strict -
-          gzip --decompress --stdout "$CANDIDATE_ARCHIVE" | docker load
-          actual_image_id="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_TAG")"
-          if [ "$actual_image_id" != "$EXPECTED_IMAGE_ID" ]; then
-            echo "Candidate image ID mismatch: expected=$EXPECTED_IMAGE_ID actual=$actual_image_id" >&2
-            exit 1
-          fi
-
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v4
-
-      - name: Log in to GHCR
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Apply release tags to the tested image
-        env:
-          VERSION: ${{ needs.build-candidate.outputs.version }}
-          REGISTRY_IMAGE: ${{ inputs.registry_image }}
-        run: |
-          set -euo pipefail
-          immutable_tag="$REGISTRY_IMAGE:$VERSION-${{ github.sha }}"
-          inspect_error="$(mktemp)"
-          if existing_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag" 2>"$inspect_error")"; then
-            existing_image_id="$(jq --raw-output '.config.digest // empty' <<< "$existing_manifest")"
-            if [ "$existing_image_id" != "$EXPECTED_IMAGE_ID" ]; then
-              echo "Refusing to overwrite immutable tag $immutable_tag ($existing_image_id != $EXPECTED_IMAGE_ID)" >&2
-              exit 1
-            fi
-          elif ! grep --extended-regexp --ignore-case --quiet 'manifest unknown|not found' "$inspect_error"; then
-            cat "$inspect_error" >&2
-            exit 1
-          fi
-          rm --force "$inspect_error"
-          docker tag "$CANDIDATE_TAG" "$immutable_tag"
-          docker tag "$CANDIDATE_TAG" "$REGISTRY_IMAGE:latest"
-          docker push "$immutable_tag"
-          docker push "$REGISTRY_IMAGE:latest"
-
-      - name: Verify promoted tags reference the tested image
-        env:
-          VERSION: ${{ needs.build-candidate.outputs.version }}
-          REGISTRY_IMAGE: ${{ inputs.registry_image }}
-        run: |
-          set -euo pipefail
-          immutable_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:$VERSION-${{ github.sha }}")"
-          latest_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:latest")"
-          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:$VERSION-${{ github.sha }}")"
-          latest_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:latest")"
-          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
-          latest_image_id="$(jq --raw-output '.config.digest // empty' <<< "$latest_manifest")"
-          if [ "$immutable_digest" != "$latest_digest" ] || \
-             [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || \
-             [ "$latest_image_id" != "$EXPECTED_IMAGE_ID" ]; then
-            echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID immutable=$immutable_image_id@$immutable_digest latest=$latest_image_id@$latest_digest" >&2
-            exit 1
-          fi

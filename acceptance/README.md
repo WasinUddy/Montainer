@@ -73,7 +73,8 @@ The regular workflow runs frontend, Go, and the four fake-Bedrock tag groups on 
 
 1. one runner verifies the recorded URL and SHA-256, builds the Mojang-backed image once, and exports a Docker archive with a recorded archive SHA-256 and image ID;
 2. one runner per real-image business tag verifies, loads, and tests that exact artifact concurrently; and
-3. only after every shard passes does the promotion runner verify and load the same artifact, push `latest` and the immutable version/commit tag to GHCR, then verify both tags resolve to the tested image.
+3. only after every shard passes does a separate, `main`-only promotion runner receive package-write permission, verify and load the same artifact, create the immutable version/commit tag once, copy that exact manifest to `latest`, and verify both tags resolve to the tested image; and
+4. the promotion runner publishes an identity record containing the full push range, source commit, image ID, manifest digest, workflow run, and attempt. A changelog release must validate that record and the still-current immutable manifest before it can create a GitHub tag or release.
 
-No release tag is built separately from the artifact exercised by acceptance tests.
+Build and acceptance jobs have read-only repository permissions. No release tag is built separately from the artifact exercised by acceptance tests, and failed-job reruns reuse the successful build's named artifact rather than silently selecting a new candidate.
 Manual workflow dispatches default to validation-only and leave release tags unchanged; a maintainer must explicitly enable the `publish` input on `main` to promote a manually dispatched candidate.
