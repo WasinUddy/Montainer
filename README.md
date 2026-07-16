@@ -11,7 +11,7 @@ Montainer combines the Minecraft Bedrock Dedicated Server with a small managemen
 
 The project was inspired by the problem described in [How web automation saved my friendship](https://youtu.be/fQo9j648l5s?si=9dq58Pp1uaxU-fKY).
 
-## What v2 provides
+## What v3 provides
 
 - **Go and Gin backend** — the Python backend has been replaced by a compiled Go process supervisor, with Gin limited to the HTTP transport.
 - **Safe Bedrock lifecycle** — start, stop, toggle, restart, command dispatch, unexpected-exit tracking, and graceful application shutdown are serialized so two Bedrock processes cannot overlap.
