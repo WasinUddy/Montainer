@@ -31,18 +31,34 @@ on:
         description: GHCR image name without a tag
         required: true
         type: string
+    outputs:
+      identity_artifact_name:
+        description: Artifact containing the verified promotion identity
+        value: ${{ jobs.promote.outputs.identity_artifact_name }}
+      identity_run_attempt:
+        description: Workflow attempt that produced the promotion identity
+        value: ${{ jobs.promote.outputs.identity_run_attempt }}
 
 permissions:
+  actions: read
   contents: read
+
+concurrency:
+  group: montainer-promotion-${{ inputs.server_type }}
+  cancel-in-progress: false
 
 jobs:
   promote:
-    name: Promote tested ${{ inputs.server_type }} image
+    name: Publish / ${{ inputs.server_type }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
+      actions: read
       contents: read
       packages: write
+    outputs:
+      identity_artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      identity_run_attempt: ${{ steps.identity.outputs.run_attempt }}
     env:
       CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
       CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
@@ -53,6 +69,31 @@ jobs:
       SOURCE_BEFORE: ${{ inputs.source_before }}
       VERSION: ${{ inputs.version }}
     steps:
+      - name: Reject obsolete delivery reruns
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const currentRunNumber = Number(process.env.GITHUB_RUN_NUMBER);
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-montainer-stable-image.yaml',
+              branch: 'main',
+              event: 'push',
+              status: 'completed',
+              per_page: 100,
+            });
+            const newerDelivery = data.workflow_runs.find((run) =>
+              run.name === 'Montainer CI/CD' &&
+              run.conclusion === 'success' &&
+              run.run_number > currentRunNumber,
+            );
+            if (newerDelivery) {
+              core.setFailed(
+                `Refusing obsolete promotion: successful run ${newerDelivery.id} is newer than ${context.runId}`,
+              );
+            }
+
       - name: Validate promotion metadata
         shell: bash
         run: |
@@ -155,6 +196,7 @@ jobs:
           echo "manifest_digest=$immutable_digest" >> "$GITHUB_OUTPUT"
 
       - name: Record the promoted image identity
+        id: identity
         shell: bash
         env:
           IMMUTABLE_TAG: ${{ steps.publish.outputs.immutable_tag }}
@@ -188,6 +230,9 @@ jobs:
               workflow_run_id: $workflow_run_id,
               workflow_run_attempt: $workflow_run_attempt
             }' > /tmp/montainer-promotion-identity.json
+          artifact_name="montainer-promotion-identity-$SERVER_TYPE-$WORKFLOW_RUN_ID-$WORKFLOW_RUN_ATTEMPT"
+          echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
+          echo "run_attempt=$WORKFLOW_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
           jq --exit-status \
             '.schema_version == 2 and
              (.source_sha | test("^[0-9a-f]{40}$")) and
@@ -197,7 +242,7 @@ jobs:
       - name: Publish the promotion identity record
         uses: actions/upload-artifact@v7
         with:
-          name: montainer-promotion-identity-${{ github.run_id }}-${{ github.run_attempt }}
+          name: ${{ steps.identity.outputs.artifact_name }}
           path: /tmp/montainer-promotion-identity.json
           if-no-files-found: error
           retention-days: 30

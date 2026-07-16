@@ -303,9 +303,22 @@ docker build \
 
 The scraper records each channel's version, exact Mojang URL, and archive SHA-256 under `versions/`. The multi-stage build verifies that the URL matches the channel/version and that the downloaded bytes match the pinned checksum before producing the non-root AMD64 Debian runtime.
 
-CI fans the source checks across independent frontend, Go, and four fake-Bedrock acceptance runners. The image workflow then builds once and exports one checksummed Docker archive with a recorded image ID. Stable fans that exact artifact out to seven concurrent real-image runners; preview uses six, omitting only the full-client shard. Every runner verifies both identities before loading the image. These build and validation jobs have read-only repository permissions.
+CI is one connected, numbered DAG. Stage 0 plans the affected release channels while Stage 1 runs a six-row quality matrix: frontend, Go/race/vet/actionlint, and four fake-Bedrock business groups. A main push reuses that matrix once rather than repeating it inside separate stable and preview workflows. Stable-only metadata changes select stable, preview-only metadata changes select preview, and common runtime changes select both. Selective routing is trusted only when the previous commit completed this delivery pipeline successfully; otherwise both channels run.
 
-Only after every runner succeeds can a separate, `main`-only promotion job receive package-write permission. It loads the accepted artifact, creates the immutable `<bedrock-version>-<commit>` tag once, copies that exact manifest to `latest`, verifies both tags, and publishes a promotion identity record. A changelog release must match that record's workflow run, full push range, source commit, image ID, and manifest digest before GitHub tags or release notes are created. Manual dispatch defaults to validation-only; promotion requires explicitly enabling `publish` on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
+Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to seven stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact and current immutable manifest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 25 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
+
+```mermaid
+flowchart LR
+    P["0 · Plan channels"] --> SB["2 · Build stable"]
+    P --> PB["2 · Build preview"]
+    Q["1 · Quality matrix ×6"] --> SB
+    Q --> PB
+    SB --> SA["3 · Stable acceptance ×7"]
+    PB --> PA["3 · Preview acceptance ×6"]
+    SA --> SP["4 · Promote stable"]
+    PA --> PP["4 · Promote preview"]
+    SP --> R["5 · Release stable"]
+```
 
 ## Migrating from v1
 

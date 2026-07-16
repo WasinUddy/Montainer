@@ -34,7 +34,7 @@ permissions:
 
 jobs:
   build-candidate:
-    name: Build immutable ${{ inputs.server_type }} candidate artifact
+    name: 2 · Build / ${{ inputs.server_type }}
     runs-on: ubuntu-latest
     timeout-minutes: 45
     permissions:
@@ -91,7 +91,7 @@ jobs:
           fi
           docker save "$candidate_tag" | gzip -1 > "$archive"
           archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
-          artifact_name='montainer-candidate-${{ github.run_id }}-${{ github.run_attempt }}'
+          artifact_name='montainer-candidate-${{ inputs.server_type }}-${{ github.run_id }}-${{ github.run_attempt }}'
           echo "image_id=$image_id" >> "$GITHUB_OUTPUT"
           echo "archive_sha256=$archive_sha256" >> "$GITHUB_OUTPUT"
           echo "artifact_name=$artifact_name" >> "$GITHUB_OUTPUT"
@@ -113,7 +113,7 @@ jobs:
           echo 'Bedrock ${{ steps.version.outputs.version }} (${{ inputs.server_type }})' >> "$GITHUB_STEP_SUMMARY"
 
   image-acceptance:
-    name: Real image / ${{ matrix.suite }}
+    name: 3 · Accept / ${{ inputs.server_type }} / ${{ matrix.suite }}
     needs: build-candidate
     runs-on: ubuntu-latest
     timeout-minutes: 30

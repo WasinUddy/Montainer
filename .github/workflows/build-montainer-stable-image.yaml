@@ -1,4 +1,4 @@
-name: Build Montainer (Stable) Image
+name: Montainer CI/CD
 
 on:
   push:
@@ -10,6 +10,7 @@ on:
       - 'acceptance/**'
       - 'test/**'
       - 'examples/docker/**'
+      - 'scripts/download_minecraft_server.py'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
@@ -18,14 +19,29 @@ on:
       - 'versions/stable.txt'
       - 'versions/stable.url'
       - 'versions/stable.sha256'
+      - 'versions/preview.txt'
+      - 'versions/preview.url'
+      - 'versions/preview.sha256'
+      - '.github/scripts/parse_changelog.py'
       - '.github/workflows/ci.yaml'
       - '.github/workflows/build-test-promote-image.yaml'
       - '.github/workflows/promote-tested-image.yaml'
+      - '.github/workflows/release.yaml'
       - '.github/workflows/build-montainer-stable-image.yaml'
+      - '.github/workflows/build-montainer-preview-image.yaml'
   workflow_dispatch:
     inputs:
+      channel:
+        description: Bedrock channels to build and acceptance-test
+        required: true
+        default: both
+        type: choice
+        options:
+          - both
+          - stable
+          - preview
       publish:
-        description: Promote the tested candidate to stable release tags
+        description: Promote accepted images when this runs on main
         required: false
         default: false
         type: boolean
@@ -34,19 +50,152 @@ permissions:
   contents: read
 
 concurrency:
-  group: montainer-stable-${{ github.ref }}
-  cancel-in-progress: true
+  group: >-
+    ${{ github.event_name == 'workflow_dispatch' &&
+        format('montainer-manual-{0}', github.run_id) ||
+        format('montainer-delivery-{0}', github.ref) }}
+  cancel-in-progress: false
 
 jobs:
+  plan:
+    name: 0 · Plan / channels
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      actions: read
+      contents: read
+    outputs:
+      preview: ${{ steps.channels.outputs.preview }}
+      stable: ${{ steps.channels.outputs.stable }}
+    steps:
+      - name: Checkout push history
+        if: github.event_name == 'push'
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 0
+
+      - name: Check the previous delivery
+        if: github.event_name == 'push'
+        id: previous
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const before = context.payload.before;
+            if (!/^[0-9a-f]{40}$/.test(before) || /^0+$/.test(before)) {
+              core.setOutput('trusted', 'false');
+              return;
+            }
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-montainer-stable-image.yaml',
+              branch: 'main',
+              event: 'push',
+              status: 'completed',
+              per_page: 100,
+            });
+            const delivered = data.workflow_runs.some((run) =>
+              run.name === 'Montainer CI/CD' &&
+              run.head_sha === before &&
+              run.conclusion === 'success',
+            );
+            core.setOutput('trusted', String(delivered));
+
+      - name: Select affected release channels
+        id: channels
+        shell: bash
+        env:
+          BEFORE_SHA: ${{ github.event.before }}
+          PREVIOUS_DELIVERY_TRUSTED: ${{ steps.previous.outputs.trusted || 'false' }}
+          REQUESTED_CHANNEL: ${{ inputs.channel || 'both' }}
+        run: |
+          set -euo pipefail
+          stable=false
+          preview=false
+
+          case "$GITHUB_EVENT_NAME" in
+            workflow_dispatch)
+              case "$REQUESTED_CHANNEL" in
+                both)
+                  stable=true
+                  preview=true
+                  ;;
+                stable)
+                  stable=true
+                  ;;
+                preview)
+                  preview=true
+                  ;;
+                *)
+                  echo "Unsupported channel selection: $REQUESTED_CHANNEL" >&2
+                  exit 1
+                  ;;
+              esac
+              ;;
+            push)
+              if [ "$PREVIOUS_DELIVERY_TRUSTED" != true ] || \
+                 ! git cat-file -e "$BEFORE_SHA^{commit}" 2>/dev/null || \
+                 ! git merge-base --is-ancestor "$BEFORE_SHA" "$GITHUB_SHA"; then
+                echo 'Previous delivery is not trusted; safely testing both channels.'
+                stable=true
+                preview=true
+              else
+                changed_files="$(git diff --name-only "$BEFORE_SHA" "$GITHUB_SHA")"
+                while IFS= read -r file; do
+                  [ -n "$file" ] || continue
+                  case "$file" in
+                    versions/stable.*|CHANGELOG.md|.github/scripts/parse_changelog.py|.github/workflows/release.yaml)
+                      stable=true
+                      ;;
+                    versions/preview.*)
+                      preview=true
+                      ;;
+                    cmd/*|internal/*|frontend/*|acceptance/*|test/*|examples/docker/*|scripts/download_minecraft_server.py|go.mod|go.sum|Dockerfile|.dockerignore|.github/workflows/ci.yaml|.github/workflows/build-test-promote-image.yaml|.github/workflows/promote-tested-image.yaml|.github/workflows/build-montainer-stable-image.yaml|.github/workflows/build-montainer-preview-image.yaml)
+                      stable=true
+                      preview=true
+                      ;;
+                    *)
+                      echo "Unmapped workflow path $file; safely testing both channels."
+                      stable=true
+                      preview=true
+                      ;;
+                  esac
+                done <<< "$changed_files"
+              fi
+              ;;
+            *)
+              echo "Unsupported event: $GITHUB_EVENT_NAME" >&2
+              exit 1
+              ;;
+          esac
+
+          if [ "$stable" = false ] && [ "$preview" = false ]; then
+            echo 'No release channel was selected.' >&2
+            exit 1
+          fi
+          echo "stable=$stable" >> "$GITHUB_OUTPUT"
+          echo "preview=$preview" >> "$GITHUB_OUTPUT"
+          {
+            echo '## Pipeline plan'
+            echo
+            echo '| Track | Selected |'
+            echo '| --- | --- |'
+            echo "| Stable | $stable |"
+            echo "| Preview | $preview |"
+            echo
+            echo "Previous delivery trusted: $PREVIOUS_DELIVERY_TRUSTED"
+          } >> "$GITHUB_STEP_SUMMARY"
+
   quality:
-    name: Source quality gates
+    name: 1 · Quality matrix
     permissions:
       contents: read
     uses: ./.github/workflows/ci.yaml
 
-  image:
-    name: Build and acceptance-test stable
-    needs: quality
+  stable-image:
+    name: Stable track
+    needs: [plan, quality]
+    if: needs.plan.outputs.stable == 'true'
     permissions:
       contents: read
     uses: ./.github/workflows/build-test-promote-image.yaml
@@ -55,19 +204,76 @@ jobs:
       version_file: versions/stable.txt
       acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup", "client"]'
 
-  promote:
-    name: Promote accepted stable image
-    needs: image
-    if: github.ref == 'refs/heads/main' && (github.event_name != 'workflow_dispatch' || inputs.publish)
+  preview-image:
+    name: Preview track
+    needs: [plan, quality]
+    if: needs.plan.outputs.preview == 'true'
     permissions:
+      contents: read
+    uses: ./.github/workflows/build-test-promote-image.yaml
+    with:
+      server_type: preview
+      version_file: versions/preview.txt
+      acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup"]'
+
+  promote-stable:
+    name: 4 · Promote / stable
+    needs: stable-image
+    if: >-
+      !cancelled() &&
+      needs.stable-image.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.publish)
+    permissions:
+      actions: read
       contents: read
       packages: write
     uses: ./.github/workflows/promote-tested-image.yaml
     with:
       server_type: stable
       source_before: ${{ github.event.before || github.sha }}
-      artifact_name: ${{ needs.image.outputs.artifact_name }}
-      archive_sha256: ${{ needs.image.outputs.archive_sha256 }}
-      image_id: ${{ needs.image.outputs.image_id }}
-      version: ${{ needs.image.outputs.version }}
+      artifact_name: ${{ needs.stable-image.outputs.artifact_name }}
+      archive_sha256: ${{ needs.stable-image.outputs.archive_sha256 }}
+      image_id: ${{ needs.stable-image.outputs.image_id }}
+      version: ${{ needs.stable-image.outputs.version }}
       registry_image: ghcr.io/wasinuddy/montainer-stable
+
+  promote-preview:
+    name: 4 · Promote / preview
+    needs: preview-image
+    if: >-
+      !cancelled() &&
+      needs.preview-image.result == 'success' &&
+      github.ref == 'refs/heads/main' &&
+      (github.event_name == 'push' || inputs.publish)
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    uses: ./.github/workflows/promote-tested-image.yaml
+    with:
+      server_type: preview
+      source_before: ${{ github.event.before || github.sha }}
+      artifact_name: ${{ needs.preview-image.outputs.artifact_name }}
+      archive_sha256: ${{ needs.preview-image.outputs.archive_sha256 }}
+      image_id: ${{ needs.preview-image.outputs.image_id }}
+      version: ${{ needs.preview-image.outputs.version }}
+      registry_image: ghcr.io/wasinuddy/montainer-preview
+
+  release-stable:
+    name: 5 · Release / stable
+    needs: promote-stable
+    if: >-
+      !cancelled() &&
+      needs.promote-stable.result == 'success' &&
+      github.event_name == 'push' &&
+      github.ref == 'refs/heads/main'
+    permissions:
+      actions: read
+      contents: write
+      packages: read
+    uses: ./.github/workflows/release.yaml
+    with:
+      identity_artifact_name: ${{ needs.promote-stable.outputs.identity_artifact_name }}
+      promotion_run_attempt: ${{ needs.promote-stable.outputs.identity_run_attempt }}
+      source_before: ${{ github.event.before }}

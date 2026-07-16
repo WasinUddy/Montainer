@@ -69,12 +69,13 @@ Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and
 
 ## CI release topology
 
-The regular workflow runs frontend, Go, and the four fake-Bedrock tag groups on independent runners. Stable uses seven concurrent real-image runners (`smoke`, `lifecycle`, the three OTLP tags, `backup`, and `client`); preview uses six, omitting only the full virtual client. Publishing follows a fan-out/fan-in pipeline:
+The connected delivery workflow uses numbered stages and matrices:
 
-1. one runner verifies the recorded URL and SHA-256, builds the Mojang-backed image once, and exports a Docker archive with a recorded archive SHA-256 and image ID;
-2. one runner per real-image business tag verifies, loads, and tests that exact artifact concurrently; and
-3. only after every shard passes does a separate, `main`-only promotion runner receive package-write permission, verify and load the same artifact, create the immutable version/commit tag once, copy that exact manifest to `latest`, and verify both tags resolve to the tested image; and
-4. the promotion runner publishes an identity record containing the full push range, source commit, image ID, manifest digest, workflow run, and attempt. A changelog release must validate that record and the still-current immutable manifest before it can create a GitHub tag or release.
+1. `0 · Plan` safely selects stable, preview, or both from the changed paths. It uses a selective delta only after a successful delivery of the previous commit and falls back to both channels otherwise.
+2. `1 · Quality` runs frontend, Go/race/vet/actionlint, and the four fake-Bedrock tag groups as one six-row matrix shared by every selected channel.
+3. `2 · Build` verifies the recorded Mojang URL and SHA-256, builds each selected channel once, and exports a channel-specific Docker archive with a recorded archive SHA-256 and image ID.
+4. `3 · Accept` fans that exact artifact out to seven stable runners (`smoke`, `lifecycle`, the three OTLP tags, `backup`, and `client`) or six preview runners, omitting only the full virtual client.
+5. `4 · Promote` receives package-write permission only after its channel's acceptance matrix succeeds, reloads the same artifact, creates the immutable version/commit tag once, copies its exact manifest to `latest`, and publishes a channel-specific identity record.
+6. `5 · Release` is connected directly to stable promotion. It validates the same-run identity and current immutable manifest, then creates only an unreleased changelog version; existing tag/release pairs are a clean no-op and interrupted same-commit releases are retryable.
 
-Build and acceptance jobs have read-only repository permissions. No release tag is built separately from the artifact exercised by acceptance tests, and failed-job reruns reuse the successful build's named artifact rather than silently selecting a new candidate.
-Manual workflow dispatches default to validation-only and leave release tags unchanged; a maintainer must explicitly enable the `publish` input on `main` to promote a manually dispatched candidate.
+Planning, quality, build, and acceptance jobs have read-only repository permissions. No release image is built separately from the artifact exercised by acceptance tests. Channel and run-attempt names prevent stable/preview or rerun artifact collisions, while failed-job reruns reuse the successful build's recorded artifact. Manual dispatch can select `stable`, `preview`, or `both`; it defaults to validation-only and leaves release tags unchanged unless a maintainer explicitly enables `publish` on `main`.
