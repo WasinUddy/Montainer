@@ -1,0 +1,103 @@
+name: Quality Matrix
+
+on:
+  pull_request:
+  workflow_call:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: quality-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  quality:
+    name: 1 · Quality / ${{ matrix.label }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 6
+      matrix:
+        include:
+          - key: frontend
+            label: frontend
+            runtime: node
+          - key: go
+            label: Go + vet + workflows
+            runtime: go
+          - key: lifecycle
+            label: fake / lifecycle
+            runtime: acceptance
+          - key: logging
+            label: fake / logging
+            runtime: acceptance
+          - key: otel
+            label: fake / OTEL
+            runtime: acceptance
+          - key: subpath
+            label: fake / subpath
+            runtime: acceptance
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Node.js
+        if: matrix.runtime == 'node'
+        uses: actions/setup-node@v7
+        with:
+          node-version: 22.x
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Set up Go
+        if: matrix.runtime != 'node'
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache: true
+
+      - name: Install frontend dependencies
+        if: matrix.runtime == 'node'
+        working-directory: frontend
+        run: npm ci
+
+      - name: Lint, test, and build frontend
+        if: matrix.runtime == 'node'
+        working-directory: frontend
+        run: |
+          npm run lint
+          npm test
+          npm run build
+
+      - name: Test Go packages with the race detector
+        if: matrix.runtime == 'go'
+        run: >-
+          go test -race -count=1
+          ./cmd/...
+          ./internal/...
+          ./test/fixtures/fakebedrock
+          ./test/fixtures/raknetprobe
+
+      - name: Vet Go backend and test harnesses
+        if: matrix.runtime == 'go'
+        run: >-
+          go vet
+          ./cmd/...
+          ./internal/...
+          ./acceptance/...
+          ./test/fixtures/fakebedrock
+          ./test/fixtures/raknetprobe
+
+      - name: Validate GitHub Actions workflows
+        if: matrix.runtime == 'go'
+        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+
+      - name: Run fake-Bedrock acceptance scenarios
+        if: matrix.runtime == 'acceptance'
+        env:
+          GODOG_TAGS: '@${{ matrix.key }}'
+        run: go test -race -v -count=1 ./acceptance

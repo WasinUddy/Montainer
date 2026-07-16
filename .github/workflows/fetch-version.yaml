@@ -2,60 +2,99 @@ name: Fetch Minecraft Server Version
 
 on:
   push:
-      paths:
-        - '.github/workflows/fetch-version.yaml'
+    branches: [main]
+    paths:
+      - '.github/workflows/fetch-version.yaml'
+      - 'scripts/fetch_version.py'
   schedule:
     - cron: '0 0 * * *'
   workflow_dispatch:
 
+permissions:
+  contents: read
+
+concurrency:
+  group: fetch-minecraft-server-version
+  cancel-in-progress: false
+
 jobs:
   fetch-version:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout Repository
-        uses: actions/checkout@v4
+      - name: Checkout repository
+        uses: actions/checkout@v7
         with:
-          token: ${{ secrets.PAT }}
+          persist-credentials: false
 
       - name: Set up Python 3.12
-        uses: actions/setup-python@v4
+        uses: actions/setup-python@v6
         with:
-          python-version: 3.12
+          python-version: '3.12'
 
-      - name: Install Dependencies
+      - name: Install scraper dependencies
         run: |
-          sudo apt-get update
-          pip install playwright
-          pip install playwright-stealth
-          python -m playwright install chromium
+          python -m pip install 'playwright==1.55.0' 'playwright-stealth==2.0.0'
+          python -m playwright install --with-deps chromium
 
-      - name: Fetch Minecraft Server Version
-        run: | 
+      - name: Fetch Minecraft server metadata
+        run: |
           python scripts/fetch_version.py | while IFS='=' read -r key value; do
-              if [ -n "$key" ] && [ -n "$value" ]; then
-                  echo "$key=$value" >> $GITHUB_ENV
-              fi
+            if [ -n "$key" ] && [ -n "$value" ]; then
+              echo "$key=$value" >> "$GITHUB_ENV"
+            fi
           done
 
-      - name: Create versions Directory if not exists
-        run: mkdir -p versions
-
-      - name: Store Fetched Stable Version
+      - name: Validate and store the exact scraped artifacts
+        shell: bash
         run: |
-          echo $STABLE_VERSION > versions/stable.txt
-      - name: Commit and Push Stable Changes
-        uses: EndBug/add-and-commit@v9
-        with:
-          add: 'versions/stable.txt'
-          message: "Update stable version"
-          default_author: github_actions
+          version_pattern='^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$'
+          if [[ ! "$STABLE_VERSION" =~ $version_pattern ]]; then
+            echo "Invalid stable version: $STABLE_VERSION" >&2
+            exit 1
+          fi
+          if [[ ! "$PREVIEW_VERSION" =~ $version_pattern ]]; then
+            echo "Invalid preview version: $PREVIEW_VERSION" >&2
+            exit 1
+          fi
+          checksum_pattern='^[0-9a-f]{64}$'
+          if [[ ! "$STABLE_SHA256" =~ $checksum_pattern ]]; then
+            echo "Invalid stable SHA-256: $STABLE_SHA256" >&2
+            exit 1
+          fi
+          if [[ ! "$PREVIEW_SHA256" =~ $checksum_pattern ]]; then
+            echo "Invalid preview SHA-256: $PREVIEW_SHA256" >&2
+            exit 1
+          fi
+          expected_stable="https://www.minecraft.net/bedrockdedicatedserver/bin-linux/bedrock-server-${STABLE_VERSION}.zip"
+          expected_preview="https://www.minecraft.net/bedrockdedicatedserver/bin-linux-preview/bedrock-server-${PREVIEW_VERSION}.zip"
+          if [ "$STABLE_URL" != "$expected_stable" ]; then
+            echo "Unexpected stable URL: $STABLE_URL" >&2
+            exit 1
+          fi
+          if [ "$PREVIEW_URL" != "$expected_preview" ]; then
+            echo "Unexpected preview URL: $PREVIEW_URL" >&2
+            exit 1
+          fi
+          mkdir -p versions
+          printf '%s\n' "$STABLE_VERSION" > versions/stable.txt
+          printf '%s\n' "$STABLE_URL" > versions/stable.url
+          printf '%s\n' "$STABLE_SHA256" > versions/stable.sha256
+          printf '%s\n' "$PREVIEW_VERSION" > versions/preview.txt
+          printf '%s\n' "$PREVIEW_URL" > versions/preview.url
+          printf '%s\n' "$PREVIEW_SHA256" > versions/preview.sha256
 
-      - name: Store Fetched Preview Version
+      - name: Commit and push changed server metadata
+        env:
+          PUSH_TOKEN: ${{ secrets.PAT }}
         run: |
-          echo $PREVIEW_VERSION > versions/preview.txt
-      - name: Commit and Push Preview Changes
-        uses: EndBug/add-and-commit@v9
-        with:
-          add: 'versions/preview.txt'
-          message: "Update preview version"
-          default_author: github_actions
+          git add versions
+          if git diff --cached --quiet; then
+            echo 'Minecraft server metadata is unchanged.'
+            exit 0
+          fi
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git commit -m 'Update Minecraft server versions'
+          git remote set-url origin "https://x-access-token:${PUSH_TOKEN}@github.com/${GITHUB_REPOSITORY}.git"
+          git push origin HEAD:main

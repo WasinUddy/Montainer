@@ -1,51 +1,355 @@
-name: Release from Changelog
+name: Release accepted stable image
 
 on:
-  push:
-    paths:
-      - 'CHANGELOG.md'
+  workflow_call:
+    inputs:
+      identity_artifact_name:
+        description: Artifact produced by the accepted stable promotion
+        required: true
+        type: string
+      promotion_run_attempt:
+        description: Workflow attempt that produced the promotion identity
+        required: true
+        type: string
+      source_before:
+        description: Commit at the start of the triggering push range
+        required: true
+        type: string
 
+permissions:
+  actions: read
+  contents: write
+  packages: read
 
 jobs:
   release:
+    name: GitHub release
     runs-on: ubuntu-latest
+    env:
+      EXPECTED_SOURCE_BEFORE: ${{ inputs.source_before }}
+      REGISTRY_IMAGE: ghcr.io/wasinuddy/montainer-stable
+      STABLE_WORKFLOW_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      TARGET_SHA: ${{ github.sha }}
     steps:
-      - name: Checkout
-        uses: actions/checkout@v4
+      - name: Verify real-image acceptance and promotion
+        uses: actions/github-script@v9
+        env:
+          EXPECTED_PROMOTION_ATTEMPT: ${{ inputs.promotion_run_attempt }}
+        with:
+          script: |
+            const runID = Number(process.env.GITHUB_RUN_ID);
+            const jobs = await github.paginate(
+              github.rest.actions.listJobsForWorkflowRun,
+              {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                run_id: runID,
+                filter: 'all',
+                per_page: 100,
+              },
+            );
 
-      - name: Setup Python
-        uses: actions/setup-python@v5
+            const latestJobEndingWith = (suffix) => jobs
+              .filter((job) => job.name.endsWith(suffix))
+              .sort((left, right) =>
+                (right.run_attempt ?? 0) - (left.run_attempt ?? 0) ||
+                right.id - left.id,
+              )[0];
+
+            const requiredSuites = [
+              'smoke',
+              'lifecycle',
+              'otel-export',
+              'otel-outage',
+              'otel-flush',
+              'backup',
+              'client',
+            ];
+            const failedOrMissingSuites = requiredSuites.filter((suite) => {
+              const job = latestJobEndingWith(`3 · Accept / stable / ${suite}`);
+              return job?.conclusion !== 'success';
+            });
+            if (failedOrMissingSuites.length > 0) {
+              core.setFailed(
+                `Stable run ${runID} is missing successful real-image shards: ${failedOrMissingSuites.join(', ')}`,
+              );
+              return;
+            }
+
+            const promotionJob = latestJobEndingWith('Publish / stable');
+            const digestVerification = promotionJob?.steps?.find(
+              (step) => step.name === 'Verify promoted tags reference the tested image',
+            );
+            const identityPublication = promotionJob?.steps?.find(
+              (step) => step.name === 'Publish the promotion identity record',
+            );
+            if (
+              promotionJob?.conclusion !== 'success' ||
+              String(promotionJob?.run_attempt) !== process.env.EXPECTED_PROMOTION_ATTEMPT ||
+              digestVerification?.conclusion !== 'success' ||
+              identityPublication?.conclusion !== 'success'
+            ) {
+              core.setFailed(
+                `Stable run ${runID} did not successfully promote and verify the tested image`,
+              );
+            }
+
+      - name: Checkout the tested commit
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ env.TARGET_SHA }}
+          fetch-depth: 1
+
+      - name: Download the promotion identity record
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.identity_artifact_name }}
+          path: /tmp/montainer-promotion
+
+      - name: Validate the promotion identity
+        shell: bash
+        env:
+          CURRENT_RUN_ATTEMPT: ${{ github.run_attempt }}
+          IDENTITY_ARTIFACT_NAME: ${{ inputs.identity_artifact_name }}
+          EXPECTED_RUN_ATTEMPT: ${{ inputs.promotion_run_attempt }}
+          EXPECTED_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          identity_file='/tmp/montainer-promotion/montainer-promotion-identity.json'
+          if [[ ! "$EXPECTED_RUN_ATTEMPT" =~ ^[1-9][0-9]*$ ]] || \
+             [ "$EXPECTED_RUN_ATTEMPT" -gt "$CURRENT_RUN_ATTEMPT" ]; then
+            echo "Invalid promotion run attempt: $EXPECTED_RUN_ATTEMPT" >&2
+            exit 1
+          fi
+          expected_artifact_name="montainer-promotion-identity-stable-$EXPECTED_RUN_ID-$EXPECTED_RUN_ATTEMPT"
+          if [ "$IDENTITY_ARTIFACT_NAME" != "$expected_artifact_name" ]; then
+            echo "Unexpected promotion identity artifact: $IDENTITY_ARTIFACT_NAME" >&2
+            exit 1
+          fi
+          bedrock_version="$(tr -d '\r\n' < versions/stable.txt)"
+          if [[ ! "$bedrock_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid stable Bedrock version: $bedrock_version" >&2
+            exit 1
+          fi
+
+          image_tag="$REGISTRY_IMAGE:$bedrock_version-$TARGET_SHA"
+          if ! jq --exit-status \
+            --arg source_sha "$TARGET_SHA" \
+            --arg source_before "$EXPECTED_SOURCE_BEFORE" \
+            --arg server_type stable \
+            --arg version "$bedrock_version" \
+            --arg registry_image "$REGISTRY_IMAGE" \
+            --arg immutable_tag "$image_tag" \
+            --arg run_id "$EXPECTED_RUN_ID" \
+            --arg run_attempt "$EXPECTED_RUN_ATTEMPT" \
+            '.schema_version == 2 and
+             .source_sha == $source_sha and
+             .source_before == $source_before and
+             .server_type == $server_type and
+             .version == $version and
+             .registry_image == $registry_image and
+             .immutable_tag == $immutable_tag and
+             .workflow_run_id == $run_id and
+             .workflow_run_attempt == $run_attempt and
+             (.source_before | test("^[0-9a-f]{40}$")) and
+             .source_before != "0000000000000000000000000000000000000000" and
+             (.image_id | test("^sha256:[0-9a-f]{64}$")) and
+             (.manifest_digest | test("^sha256:[0-9a-f]{64}$"))' \
+            "$identity_file" >/dev/null; then
+            echo 'Promotion identity does not match this stable workflow run.' >&2
+            exit 1
+          fi
+
+          recorded_image_id="$(jq --raw-output '.image_id' "$identity_file")"
+          recorded_digest="$(jq --raw-output '.manifest_digest' "$identity_file")"
+          {
+            echo "RECORDED_IMAGE_ID=$recorded_image_id"
+            echo "TESTED_IMAGE_DIGEST=$recorded_digest"
+            echo "TESTED_IMAGE_TAG=$image_tag"
+            echo "TESTED_IMAGE_REFERENCE=$image_tag@$recorded_digest"
+          } >> "$GITHUB_ENV"
+
+      - name: Set up Python
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
-      - name: Parse Changelog
-        run: |
-          python .github/scripts/parse_changelog.py
+      - name: Parse changelog
+        run: python .github/scripts/parse_changelog.py
 
-      - name: Read Changelog Outputs
-        id: read_changelog
+      - name: Read changelog outputs
         run: |
-          version=$(cat github_action_outputs/version.txt)
-          date=$(cat github_action_outputs/date.txt)
-          details=$(cat github_action_outputs/latest_version_details.txt)
-          echo "VERSION=$version" >> $GITHUB_ENV
-          echo "DATE=$date" >> $GITHUB_ENV
-          echo "DETAILS<<EOF" >> $GITHUB_ENV
-          echo "$details" >> $GITHUB_ENV
-          echo "EOF" >> $GITHUB_ENV
+          version="$(cat github_action_outputs/version.txt)"
+          date="$(cat github_action_outputs/date.txt)"
+          details="$(cat github_action_outputs/latest_version_details.txt)"
+          {
+            echo "VERSION=$version"
+            echo "DATE=$date"
+            echo 'DETAILS<<EOF'
+            echo "$details"
+            echo 'EOF'
+          } >> "$GITHUB_ENV"
 
-      - name: Create Tag
-        uses: actions/github-script@v7
+      - name: Determine whether the changelog version needs a release
+        id: changes
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const tagName = process.env.VERSION;
+            const targetSHA = process.env.TARGET_SHA;
+            if (!/^\d+\.\d+\.\d+$/.test(tagName)) {
+              core.setFailed(`Refusing invalid changelog version: ${tagName}`);
+              return;
+            }
+
+            let tagRef;
+            try {
+              ({ data: tagRef } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tagName}`,
+              }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            let release;
+            try {
+              ({ data: release } = await github.rest.repos.getReleaseByTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag: tagName,
+              }));
+            } catch (error) {
+              if (error.status !== 404) throw error;
+            }
+
+            const resolveTarget = async (ref) => {
+              if (ref.object.type === 'commit') return ref.object.sha;
+              if (ref.object.type !== 'tag') {
+                throw new Error(`Tag ${tagName} has unsupported object type ${ref.object.type}`);
+              }
+              const { data: annotatedTag } = await github.rest.git.getTag({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                tag_sha: ref.object.sha,
+              });
+              if (annotatedTag.object.type !== 'commit') {
+                throw new Error(`Tag ${tagName} does not resolve directly to a commit`);
+              }
+              return annotatedTag.object.sha;
+            };
+
+            if (!tagRef && !release) {
+              core.setOutput('changed', 'true');
+              return;
+            }
+            if (!tagRef && release) {
+              core.setFailed(`Release ${tagName} exists without its Git tag`);
+              return;
+            }
+            const existingTarget = await resolveTarget(tagRef);
+            if (tagRef && !release) {
+              if (existingTarget !== targetSHA) {
+                core.setFailed(
+                  `Tag ${tagName} targets ${existingTarget} but has no release; refusing recovery from ${targetSHA}`,
+                );
+                return;
+              }
+              core.info(`Recovering release ${tagName} for existing tag at ${targetSHA}`);
+              core.setOutput('changed', 'true');
+              return;
+            }
+            core.info(`Changelog version ${tagName} is already released from ${existingTarget}`);
+            core.setOutput('changed', 'false');
+
+      - name: Set up Docker Buildx
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        if: steps.changes.outputs.changed == 'true'
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Verify the immutable promoted image identity
+        if: steps.changes.outputs.changed == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          current_manifest="$(docker buildx imagetools inspect --raw "$TESTED_IMAGE_TAG")"
+          current_image_id="$(jq --raw-output '.config.digest // empty' <<< "$current_manifest")"
+          current_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$TESTED_IMAGE_TAG")"
+          if [ "$current_image_id" != "$RECORDED_IMAGE_ID" ] || [ "$current_digest" != "$TESTED_IMAGE_DIGEST" ]; then
+            echo "Promoted image changed after acceptance: recorded=$RECORDED_IMAGE_ID@$TESTED_IMAGE_DIGEST current=$current_image_id@$current_digest" >&2
+            exit 1
+          fi
+
+      - name: Create immutable release tag
+        if: steps.changes.outputs.changed == 'true'
+        uses: actions/github-script@v9
         with:
           script: |
             const version = process.env.VERSION;
             const tagName = `${version}`;
+            const targetSHA = process.env.TARGET_SHA;
+
+            if (!/^\d+\.\d+\.\d+$/.test(tagName)) {
+              core.setFailed(`Refusing to create invalid release tag: ${tagName}`);
+              return;
+            }
+
+            try {
+              const { data: existingRef } = await github.rest.git.getRef({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                ref: `tags/${tagName}`,
+              });
+              let existingTargetSHA;
+              if (existingRef.object.type === 'commit') {
+                existingTargetSHA = existingRef.object.sha;
+              } else if (existingRef.object.type === 'tag') {
+                const { data: existingTag } = await github.rest.git.getTag({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  tag_sha: existingRef.object.sha,
+                });
+                if (existingTag.object.type !== 'commit') {
+                  core.setFailed(
+                    `Existing tag ${tagName} does not resolve directly to a commit`,
+                  );
+                  return;
+                }
+                existingTargetSHA = existingTag.object.sha;
+              } else {
+                core.setFailed(
+                  `Existing tag ${tagName} has unsupported object type ${existingRef.object.type}`,
+                );
+                return;
+              }
+              if (existingTargetSHA !== targetSHA) {
+                core.setFailed(
+                  `Refusing to move existing tag ${tagName} from ${existingTargetSHA} to ${targetSHA}`,
+                );
+                return;
+              }
+              core.info(`Release tag ${tagName} already targets ${targetSHA}`);
+              return;
+            } catch (error) {
+              if (error.status !== 404) {
+                throw error;
+              }
+            }
+
             const { data: tag } = await github.rest.git.createTag({
               owner: context.repo.owner,
               repo: context.repo.repo,
               tag: tagName,
               message: `Release ${tagName}`,
-              object: context.sha,
+              object: targetSHA,
               type: 'commit',
             });
             await github.rest.git.createRef({
@@ -55,10 +359,19 @@ jobs:
               sha: tag.sha,
             });
 
-
-      - name: Create Release
+      - name: Create GitHub release
+        if: steps.changes.outputs.changed == 'true'
         uses: softprops/action-gh-release@v2
         with:
           name: ${{ env.VERSION }}
           tag_name: ${{ env.VERSION }}
-          body: ${{ env.DETAILS }}
+          body: |
+            ${{ env.DETAILS }}
+
+            ## Tested stable image
+
+            - Immutable tag: `${{ env.TESTED_IMAGE_TAG }}`
+            - Tested digest: `${{ env.TESTED_IMAGE_DIGEST }}`
+            - Deployable reference: `${{ env.TESTED_IMAGE_REFERENCE }}`
+            - Source commit: `${{ env.TARGET_SHA }}`
+            - Acceptance and promotion run: ${{ env.STABLE_WORKFLOW_RUN_URL }}

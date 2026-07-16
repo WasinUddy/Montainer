@@ -1,0 +1,198 @@
+name: Build and acceptance-test Montainer image
+
+on:
+  workflow_call:
+    inputs:
+      server_type:
+        description: Mojang release channel used by the Docker build
+        required: true
+        type: string
+      version_file:
+        description: Repository file containing the scraped Bedrock version
+        required: true
+        type: string
+      acceptance_suites:
+        description: JSON array of real-image Godog tags to fan out across runners
+        required: true
+        type: string
+    outputs:
+      archive_sha256:
+        description: SHA-256 of the accepted Docker archive
+        value: ${{ jobs.build-candidate.outputs.archive_sha256 }}
+      artifact_name:
+        description: Actions artifact containing the accepted Docker archive
+        value: ${{ jobs.build-candidate.outputs.artifact_name }}
+      image_id:
+        description: Docker image ID shared by every acceptance runner
+        value: ${{ jobs.build-candidate.outputs.image_id }}
+      version:
+        description: Validated Mojang Bedrock version in the image
+        value: ${{ jobs.build-candidate.outputs.version }}
+
+permissions:
+  contents: read
+
+jobs:
+  build-candidate:
+    name: 2 · Build / ${{ inputs.server_type }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    permissions:
+      contents: read
+    outputs:
+      archive_sha256: ${{ steps.identity.outputs.archive_sha256 }}
+      artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      image_id: ${{ steps.identity.outputs.image_id }}
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Validate scraped Bedrock version
+        id: version
+        shell: bash
+        run: |
+          version="$(tr -d '\r\n' < '${{ inputs.version_file }}')"
+          if [[ ! "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]; then
+            echo "Invalid Bedrock version: $version" >&2
+            exit 1
+          fi
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Build the candidate once
+        uses: docker/build-push-action@v7
+        with:
+          context: .
+          platforms: linux/amd64
+          build-args: |
+            SERVER_TYPE=${{ inputs.server_type }}
+            BEDROCK_VERSION=${{ steps.version.outputs.version }}
+          load: true
+          tags: montainer-candidate:${{ github.sha }}
+          provenance: false
+          sbom: false
+          cache-from: type=gha,scope=${{ inputs.server_type }}
+          cache-to: type=gha,mode=max,scope=${{ inputs.server_type }}
+
+      - name: Record and archive the exact candidate
+        id: identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          candidate_tag='montainer-candidate:${{ github.sha }}'
+          archive='/tmp/montainer-candidate.tar.gz'
+          image_id="$(docker image inspect --format '{{.Id}}' "$candidate_tag")"
+          if [[ ! "$image_id" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid candidate image ID: $image_id" >&2
+            exit 1
+          fi
+          docker save "$candidate_tag" | gzip -1 > "$archive"
+          archive_sha256="$(sha256sum "$archive" | awk '{print $1}')"
+          artifact_name='montainer-candidate-${{ inputs.server_type }}-${{ github.run_id }}-${{ github.run_attempt }}'
+          {
+            echo "image_id=$image_id"
+            echo "archive_sha256=$archive_sha256"
+            echo "artifact_name=$artifact_name"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Share the immutable candidate with acceptance runners
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.identity.outputs.artifact_name }}
+          path: /tmp/montainer-candidate.tar.gz
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0
+
+      - name: Record candidate identity
+        env:
+          ARCHIVE_SHA256: ${{ steps.identity.outputs.archive_sha256 }}
+          BEDROCK_VERSION: ${{ steps.version.outputs.version }}
+          IMAGE_ID: ${{ steps.identity.outputs.image_id }}
+          SERVER_TYPE: ${{ inputs.server_type }}
+        run: |
+          {
+            echo '### Immutable candidate artifact'
+            echo "Image ID: \`$IMAGE_ID\`"
+            echo "Archive SHA-256: \`$ARCHIVE_SHA256\`"
+            echo "Bedrock $BEDROCK_VERSION ($SERVER_TYPE)"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+  image-acceptance:
+    name: 3 · Accept / ${{ inputs.server_type }} / ${{ matrix.suite }}
+    needs: build-candidate
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+    strategy:
+      fail-fast: false
+      max-parallel: 8
+      matrix:
+        suite: ${{ fromJSON(inputs.acceptance_suites) }}
+    env:
+      CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
+      CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
+      EXPECTED_ARCHIVE_SHA256: ${{ needs.build-candidate.outputs.archive_sha256 }}
+      EXPECTED_IMAGE_ID: ${{ needs.build-candidate.outputs.image_id }}
+      GODOG_TAGS: '@${{ matrix.suite }}'
+      MONTAINER_ACCEPTANCE_IMAGE: montainer-candidate:${{ github.sha }}
+      MONTAINER_EXPECTED_BEDROCK_VERSION: ${{ needs.build-candidate.outputs.version }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version: '1.26.x'
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            test/fixtures/bedrockclient/go.sum
+
+      - name: Download the exact candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ needs.build-candidate.outputs.artifact_name }}
+          path: /tmp/montainer-candidate
+
+      - name: Verify and load the exact candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$CANDIDATE_ARCHIVE" | sha256sum --check --strict -
+          gzip --decompress --stdout "$CANDIDATE_ARCHIVE" | docker load
+          actual_image_id="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_TAG")"
+          if [ "$actual_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Candidate image ID mismatch: expected=$EXPECTED_IMAGE_ID actual=$actual_image_id" >&2
+            exit 1
+          fi
+
+      - name: Run ${{ matrix.suite }} real-image acceptance scenarios
+        run: go test -v -count=1 ./acceptance/realimage
+
+      - name: Capture orphaned container diagnostics
+        if: failure()
+        run: |
+          docker ps -a
+          mapfile -t containers < <(docker ps -aq --filter 'name=montainer-')
+          for container in "${containers[@]}"; do
+            echo "===== $container ====="
+            docker logs --tail 500 "$container" || true
+          done
+
+      - name: Clean up isolated Docker resources
+        if: always()
+        run: |
+          mapfile -t containers < <(docker ps -aq --filter 'name=montainer-')
+          if [ "${#containers[@]}" -gt 0 ]; then
+            docker rm --force --volumes "${containers[@]}"
+          fi
+          mapfile -t networks < <(docker network ls -q --filter 'name=montainer-real-')
+          for network in "${networks[@]}"; do
+            docker network rm "$network" || true
+          done

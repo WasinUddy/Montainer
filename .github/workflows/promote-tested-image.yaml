@@ -1,0 +1,253 @@
+name: Promote accepted Montainer image
+
+on:
+  workflow_call:
+    inputs:
+      server_type:
+        description: Mojang release channel represented by the accepted image
+        required: true
+        type: string
+      source_before:
+        description: Commit at the start of the triggering push range
+        required: true
+        type: string
+      artifact_name:
+        description: Actions artifact containing the accepted Docker archive
+        required: true
+        type: string
+      archive_sha256:
+        description: Expected SHA-256 of the accepted Docker archive
+        required: true
+        type: string
+      image_id:
+        description: Expected Docker image ID of the accepted image
+        required: true
+        type: string
+      version:
+        description: Mojang Bedrock version packaged in the accepted image
+        required: true
+        type: string
+      registry_image:
+        description: GHCR image name without a tag
+        required: true
+        type: string
+    outputs:
+      identity_artifact_name:
+        description: Artifact containing the verified promotion identity
+        value: ${{ jobs.promote.outputs.identity_artifact_name }}
+      identity_run_attempt:
+        description: Workflow attempt that produced the promotion identity
+        value: ${{ jobs.promote.outputs.identity_run_attempt }}
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: montainer-promotion-${{ inputs.server_type }}
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    name: Publish / ${{ inputs.server_type }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      actions: read
+      contents: read
+      packages: write
+    outputs:
+      identity_artifact_name: ${{ steps.identity.outputs.artifact_name }}
+      identity_run_attempt: ${{ steps.identity.outputs.run_attempt }}
+    env:
+      CANDIDATE_ARCHIVE: /tmp/montainer-candidate/montainer-candidate.tar.gz
+      CANDIDATE_TAG: montainer-candidate:${{ github.sha }}
+      EXPECTED_ARCHIVE_SHA256: ${{ inputs.archive_sha256 }}
+      EXPECTED_IMAGE_ID: ${{ inputs.image_id }}
+      REGISTRY_IMAGE: ${{ inputs.registry_image }}
+      SERVER_TYPE: ${{ inputs.server_type }}
+      SOURCE_BEFORE: ${{ inputs.source_before }}
+      VERSION: ${{ inputs.version }}
+    steps:
+      - name: Reject obsolete delivery reruns
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const currentRunNumber = Number(process.env.GITHUB_RUN_NUMBER);
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              workflow_id: 'build-montainer-stable-image.yaml',
+              branch: 'main',
+              event: 'push',
+              status: 'completed',
+              per_page: 100,
+            });
+            const newerDelivery = data.workflow_runs.find((run) =>
+              run.name === 'Montainer CI/CD' &&
+              run.conclusion === 'success' &&
+              run.run_number > currentRunNumber,
+            );
+            if (newerDelivery) {
+              core.setFailed(
+                `Refusing obsolete promotion: successful run ${newerDelivery.id} is newer than ${context.runId}`,
+              );
+            }
+
+      - name: Validate promotion metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "$SOURCE_BEFORE" =~ ^[0-9a-f]{40}$ ]]
+          [[ "$EXPECTED_ARCHIVE_SHA256" =~ ^[0-9a-f]{64}$ ]]
+          [[ "$EXPECTED_IMAGE_ID" =~ ^sha256:[0-9a-f]{64}$ ]]
+          [[ "$VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+(\.[0-9]+)?$ ]]
+          [[ "$SERVER_TYPE" =~ ^(stable|preview)$ ]]
+          [[ "$REGISTRY_IMAGE" =~ ^ghcr\.io/[a-z0-9._-]+/[a-z0-9._/-]+$ ]]
+
+      - name: Download the accepted candidate artifact
+        uses: actions/download-artifact@v8
+        with:
+          name: ${{ inputs.artifact_name }}
+          path: /tmp/montainer-candidate
+
+      - name: Verify and load the accepted candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          printf '%s  %s\n' "$EXPECTED_ARCHIVE_SHA256" "$CANDIDATE_ARCHIVE" | sha256sum --check --strict -
+          gzip --decompress --stdout "$CANDIDATE_ARCHIVE" | docker load
+          actual_image_id="$(docker image inspect --format '{{.Id}}' "$CANDIDATE_TAG")"
+          if [ "$actual_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Candidate image ID mismatch: expected=$EXPECTED_IMAGE_ID actual=$actual_image_id" >&2
+            exit 1
+          fi
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v4
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Apply release tags to the tested image
+        id: publish
+        shell: bash
+        run: |
+          set -euo pipefail
+          immutable_tag="$REGISTRY_IMAGE:$VERSION-${{ github.sha }}"
+          inspect_error="$(mktemp)"
+          immutable_exists=false
+          if immutable_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag" 2>"$inspect_error")"; then
+            immutable_exists=true
+            immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
+            if [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+              echo "Refusing to overwrite immutable tag $immutable_tag ($immutable_image_id != $EXPECTED_IMAGE_ID)" >&2
+              exit 1
+            fi
+          elif ! grep --extended-regexp --ignore-case --quiet 'manifest unknown|not found' "$inspect_error"; then
+            cat "$inspect_error" >&2
+            exit 1
+          fi
+          rm --force "$inspect_error"
+
+          if [ "$immutable_exists" = false ]; then
+            docker tag "$CANDIDATE_TAG" "$immutable_tag"
+            docker push "$immutable_tag"
+          fi
+
+          immutable_manifest="$(docker buildx imagetools inspect --raw "$immutable_tag")"
+          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
+          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$immutable_tag")"
+          if [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || [[ ! "$immutable_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+            echo "Invalid immutable image identity: image=$immutable_image_id digest=$immutable_digest" >&2
+            exit 1
+          fi
+
+          docker buildx imagetools create \
+            --prefer-index=false \
+            --tag "$REGISTRY_IMAGE:latest" \
+            "$REGISTRY_IMAGE@$immutable_digest"
+          {
+            echo "immutable_tag=$immutable_tag"
+            echo "manifest_digest=$immutable_digest"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Verify promoted tags reference the tested image
+        id: verify
+        shell: bash
+        env:
+          IMMUTABLE_TAG: ${{ steps.publish.outputs.immutable_tag }}
+        run: |
+          set -euo pipefail
+          immutable_manifest="$(docker buildx imagetools inspect --raw "$IMMUTABLE_TAG")"
+          latest_manifest="$(docker buildx imagetools inspect --raw "$REGISTRY_IMAGE:latest")"
+          immutable_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$IMMUTABLE_TAG")"
+          latest_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$REGISTRY_IMAGE:latest")"
+          immutable_image_id="$(jq --raw-output '.config.digest // empty' <<< "$immutable_manifest")"
+          latest_image_id="$(jq --raw-output '.config.digest // empty' <<< "$latest_manifest")"
+          if [ "$immutable_digest" != "$latest_digest" ] || \
+             [ "$immutable_image_id" != "$EXPECTED_IMAGE_ID" ] || \
+             [ "$latest_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+            echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID immutable=$immutable_image_id@$immutable_digest latest=$latest_image_id@$latest_digest" >&2
+            exit 1
+          fi
+          echo "manifest_digest=$immutable_digest" >> "$GITHUB_OUTPUT"
+
+      - name: Record the promoted image identity
+        id: identity
+        shell: bash
+        env:
+          IMMUTABLE_TAG: ${{ steps.publish.outputs.immutable_tag }}
+          MANIFEST_DIGEST: ${{ steps.verify.outputs.manifest_digest }}
+          SOURCE_SHA: ${{ github.sha }}
+          WORKFLOW_RUN_ATTEMPT: ${{ github.run_attempt }}
+          WORKFLOW_RUN_ID: ${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          jq --null-input \
+            --arg source_sha "$SOURCE_SHA" \
+            --arg source_before "$SOURCE_BEFORE" \
+            --arg server_type "$SERVER_TYPE" \
+            --arg version "$VERSION" \
+            --arg registry_image "$REGISTRY_IMAGE" \
+            --arg immutable_tag "$IMMUTABLE_TAG" \
+            --arg image_id "$EXPECTED_IMAGE_ID" \
+            --arg manifest_digest "$MANIFEST_DIGEST" \
+            --arg workflow_run_id "$WORKFLOW_RUN_ID" \
+            --arg workflow_run_attempt "$WORKFLOW_RUN_ATTEMPT" \
+            '{
+              schema_version: 2,
+              source_sha: $source_sha,
+              source_before: $source_before,
+              server_type: $server_type,
+              version: $version,
+              registry_image: $registry_image,
+              immutable_tag: $immutable_tag,
+              image_id: $image_id,
+              manifest_digest: $manifest_digest,
+              workflow_run_id: $workflow_run_id,
+              workflow_run_attempt: $workflow_run_attempt
+            }' > /tmp/montainer-promotion-identity.json
+          artifact_name="montainer-promotion-identity-$SERVER_TYPE-$WORKFLOW_RUN_ID-$WORKFLOW_RUN_ATTEMPT"
+          {
+            echo "artifact_name=$artifact_name"
+            echo "run_attempt=$WORKFLOW_RUN_ATTEMPT"
+          } >> "$GITHUB_OUTPUT"
+          jq --exit-status \
+            '.schema_version == 2 and
+             (.source_sha | test("^[0-9a-f]{40}$")) and
+             (.source_before | test("^[0-9a-f]{40}$"))' \
+            /tmp/montainer-promotion-identity.json >/dev/null
+
+      - name: Publish the promotion identity record
+        uses: actions/upload-artifact@v7
+        with:
+          name: ${{ steps.identity.outputs.artifact_name }}
+          path: /tmp/montainer-promotion-identity.json
+          if-no-files-found: error
+          retention-days: 30
+          compression-level: 0

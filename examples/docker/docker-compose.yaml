@@ -2,37 +2,60 @@ services:
   montainer:
     image: ghcr.io/wasinuddy/montainer-stable:latest # Use 'montainer-preview' for Snapshot server
     ports:
-      - "8000:8000"         # Web UI console on port 8000
-      - "19132:19132/udp"   # Minecraft Bedrock server port
+      - "127.0.0.1:8000:8000" # Web UI console; keep the unauthenticated API local
+      - "19132:19132/udp"     # Minecraft Bedrock server port
+      - "19133:19133/udp"     # Minecraft Bedrock IPv6 port
     volumes:
-      - ./worlds:/app/instance/worlds # Mount for world data
-      - ./configs:/app/configs       # Mount for server configurations
-      - ./resource_packs:/app/resource_packs    # Mount for resource pack mods
+      - montainer_worlds:/app/instance/worlds
+      - montainer_configs:/app/configs
+      - montainer_resource_packs:/app/resource_packs
+      - montainer_logs:/app/logs
     environment:
-      - AWS_S3_ENDPOINT=http://minio:9000
-      - AWS_S3_KEY_ID=minioadmin
-      - AWS_S3_SECRET_KEY=minioadmin
-      - AWS_S3_BUCKET_NAME=montainer-backups
-      - AWS_S3_REGION=us-east-1
-      - INSTANCE_NAME=MontainerInstance
+      AWS_S3_ENDPOINT: http://minio:9000
+      AWS_S3_KEY_ID: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in examples/docker/.env}"
+      AWS_S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in examples/docker/.env}"
+      AWS_S3_BUCKET_NAME: "${AWS_S3_BUCKET_NAME:-montainer-backups}"
+      AWS_S3_REGION: us-east-1
+      INSTANCE_NAME: MontainerInstance
     depends_on:
-      - minio
+      minio-init:
+        condition: service_completed_successfully
+    stop_grace_period: 90s # Safe for default lifecycle timeouts; increase when customizing them
     restart: unless-stopped
 
   minio:
-    image: minio/minio:latest
+    image: minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e
     ports:
-      - "9000:9000" # MinIO web UI and API
-      - "9001:9001" # MinIO console
+      - "127.0.0.1:9000:9000" # MinIO S3 API
+      - "127.0.0.1:9001:9001" # MinIO administration console
     volumes:
-      - ./minio/data:/data # Persistent data storage for MinIO
-      - ./minio/config:/root/.minio # MinIO configuration
+      - minio_data:/data
     environment:
-      - MINIO_ROOT_USER=minioadmin
-      - MINIO_ROOT_PASSWORD=minioadmin
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in examples/docker/.env}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in examples/docker/.env}"
     command: server /data --console-address ":9001"
     restart: unless-stopped
 
+  minio-init:
+    image: minio/mc@sha256:a7fe349ef4bd8521fb8497f55c6042871b2ae640607cf99d9bede5e9bdf11727
+    depends_on:
+      - minio
+    environment:
+      MINIO_ROOT_USER: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in examples/docker/.env}"
+      MINIO_ROOT_PASSWORD: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in examples/docker/.env}"
+      AWS_S3_BUCKET_NAME: "${AWS_S3_BUCKET_NAME:-montainer-backups}"
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        until mc alias set local http://minio:9000 "$${MINIO_ROOT_USER}" "$${MINIO_ROOT_PASSWORD}"; do
+          sleep 1
+        done
+        mc mb --ignore-existing "local/$${AWS_S3_BUCKET_NAME}"
+    restart: "no"
+
 volumes:
-  minio_data: # Persistent storage for MinIO
-  minio_config:
+  montainer_worlds:
+  montainer_configs:
+  montainer_resource_packs:
+  montainer_logs:
+  minio_data:
