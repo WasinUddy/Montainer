@@ -63,6 +63,8 @@ docker run -d \
 
 Use `ghcr.io/wasinuddy/montainer-preview:latest` for the Bedrock Preview channel.
 
+Use `ghcr.io/wasinuddy/montainer-stable:<minecraft-version>` or `ghcr.io/wasinuddy/montainer-preview:<minecraft-version>` to stay on a specific Bedrock binary while receiving newly accepted Montainer rebuilds. These Minecraft-version tags are intentionally overwritten after the full acceptance matrix passes. For a completely immutable deployment, use the `:<minecraft-version>@sha256:<digest>` reference published in the matching GitHub release.
+
 Open [http://localhost:8000](http://localhost:8000) after the container becomes healthy. Bedrock starts automatically by default.
 
 > [!WARNING]
@@ -305,7 +307,7 @@ The scraper records each channel's version, exact Mojang URL, and archive SHA-25
 
 CI is one connected, numbered DAG. Stage 0 plans the affected release channels while Stage 1 runs a six-row quality matrix: frontend, Go/race/vet/actionlint, and four fake-Bedrock business groups. A main push reuses that matrix once rather than repeating it inside separate stable and preview workflows. Stable-only metadata changes select stable, preview-only metadata changes select preview, and common runtime changes select both. Selective routing is trusted only when the previous commit completed this delivery pipeline successfully; otherwise both channels run.
 
-Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to seven stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact and current immutable manifest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 25 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
+Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to seven stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact, current Minecraft-version manifest, and recorded digest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 25 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
 
 ```mermaid
 flowchart LR
@@ -332,7 +334,7 @@ The container image remains the deployment boundary, and the established managem
 - conflicting lifecycle requests now return `409`, an unconfigured backup returns `503`, and timeout/cancellation status mapping is more explicit;
 - HTTP and WebSocket clients are expected to be same-origin; cross-origin consumers should use a correctly configured reverse proxy;
 - logs are rotated and can fan out to OTLP without disabling local access; and
-- the image is explicitly built for `linux/amd64` because the Bedrock binary has no native ARM64 release; versioned image tags include both the Bedrock version and commit SHA while `latest` remains available.
+- the image is explicitly built for `linux/amd64` because the Bedrock binary has no native ARM64 release; each channel publishes the exact Minecraft Bedrock version as its tag (for example, `1.26.33.2`) and overwrites that tag after a newly accepted Montainer rebuild, while release notes provide a digest-pinned reference for immutable deployments.
 
 Back up your existing volumes before upgrading. Reuse the same worlds, configs, and resource-pack mounts, ensure they are writable by UID/GID `10001`, and allow a `90s` termination grace period for the first v2 deployment.
 

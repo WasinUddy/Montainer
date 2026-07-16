@@ -92,9 +92,11 @@ jobs:
           ./test/fixtures/fakebedrock
           ./test/fixtures/raknetprobe
 
-      - name: Validate GitHub Actions workflows
+      - name: Validate GitHub Actions workflows and image tag contract
         if: matrix.runtime == 'go'
-        run: go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+        run: |
+          go run github.com/rhysd/actionlint/cmd/actionlint@v1.7.12
+          python3 .github/scripts/validate_image_tag_contract.py
 
       - name: Run fake-Bedrock acceptance scenarios
         if: matrix.runtime == 'acceptance'

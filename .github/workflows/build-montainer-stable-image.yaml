@@ -23,6 +23,7 @@ on:
       - 'versions/preview.url'
       - 'versions/preview.sha256'
       - '.github/scripts/parse_changelog.py'
+      - '.github/scripts/validate_image_tag_contract.py'
       - '.github/workflows/ci.yaml'
       - '.github/workflows/build-test-promote-image.yaml'
       - '.github/workflows/promote-tested-image.yaml'
@@ -150,7 +151,7 @@ jobs:
                     versions/preview.*)
                       preview=true
                       ;;
-                    cmd/*|internal/*|frontend/*|acceptance/*|test/*|examples/docker/*|scripts/download_minecraft_server.py|go.mod|go.sum|Dockerfile|.dockerignore|.github/workflows/ci.yaml|.github/workflows/build-test-promote-image.yaml|.github/workflows/promote-tested-image.yaml|.github/workflows/build-montainer-stable-image.yaml|.github/workflows/build-montainer-preview-image.yaml)
+                    cmd/*|internal/*|frontend/*|acceptance/*|test/*|examples/docker/*|scripts/download_minecraft_server.py|go.mod|go.sum|Dockerfile|.dockerignore|.github/scripts/validate_image_tag_contract.py|.github/workflows/ci.yaml|.github/workflows/build-test-promote-image.yaml|.github/workflows/promote-tested-image.yaml|.github/workflows/build-montainer-stable-image.yaml|.github/workflows/build-montainer-preview-image.yaml)
                       stable=true
                       preview=true
                       ;;
