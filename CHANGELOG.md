@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.2] - 2026-07-20
+### Fixed
+- On every Docker start, safely migrate and recursively validate pre-v3 instance and persistence data without following symlinked paths or crossing nested mounts, then drop all privileges and run Montainer, Bedrock, and the health probe as UID/GID `10001`.
+- Support both the default migration bootstrap and an explicitly non-root, runtime-hardened deployment without breaking container health checks.
+- Expose the writable Bedrock library path only after the bootstrap has dropped to UID/GID `10001`, preventing root health or migration tools from loading instance-controlled libraries.
+- Gate stable promotion on upgrading and joining a real world made by the digest-pinned pre-v3 image, preserving logical scoreboard state, restoring the uploaded backup into fresh volumes where the same state must load, migrating a custom instance root, pruning nested mounts literally, and keeping explicit non-root container health functional.
+
 ## [3.0.1] - 2026-07-16
 ### Fixed
 - Publish stable and preview images under the exact Minecraft Bedrock version (for example, `1.26.33.2`) instead of a version/commit composite tag.

@@ -19,6 +19,7 @@ import (
 type statusResponse struct {
 	Running    bool   `json:"is_running"`
 	State      string `json:"state"`
+	PID        int    `json:"pid"`
 	Generation uint64 `json:"generation"`
 }
 
@@ -93,6 +94,53 @@ func (s *scenarioState) logsEventuallyContain(expected string) error {
 		}
 		return nil
 	})
+}
+
+func (s *scenarioState) legacyScoreboardStateIsPreserved() error {
+	expected := s.legacyScore
+	testCommand := fmt.Sprintf(
+		"scoreboard players test %s %s %d %d",
+		legacyPlayerName,
+		legacyObjectiveName,
+		expected,
+		expected,
+	)
+	if err := s.sendCommand(testCommand); err != nil {
+		return fmt.Errorf("query legacy scoreboard state: %w", err)
+	}
+	if err := s.logsEventuallyContain(legacyScoreSentence(expected, expected)); err != nil {
+		return err
+	}
+
+	// Before backup, advance the durable state and confirm the command queue has
+	// applied it. The post-backup assertion then searches for a new exact result,
+	// so an old log line cannot make a failed restart look successful.
+	if s.legacyChecks == 0 {
+		next := expected + 1
+		if err := s.sendCommand(fmt.Sprintf(
+			"scoreboard players set %s %s %d",
+			legacyPlayerName,
+			legacyObjectiveName,
+			next,
+		)); err != nil {
+			return fmt.Errorf("advance legacy scoreboard state: %w", err)
+		}
+		if err := s.sendCommand(fmt.Sprintf(
+			"scoreboard players test %s %s %d %d",
+			legacyPlayerName,
+			legacyObjectiveName,
+			next,
+			next+1,
+		)); err != nil {
+			return fmt.Errorf("confirm advanced legacy scoreboard state: %w", err)
+		}
+		if err := s.logsEventuallyContain(legacyScoreSentence(next, next+1)); err != nil {
+			return err
+		}
+		s.legacyScore = next
+	}
+	s.legacyChecks++
+	return nil
 }
 
 func (s *scenarioState) requestStopsConcurrently(count int) error {
@@ -239,29 +287,9 @@ func (s *scenarioState) oneBackupSucceeds() error {
 }
 
 func (s *scenarioState) uploadedBackupIsValid() error {
-	if s.minioClient == nil {
-		return fmt.Errorf("MinIO client is not configured")
-	}
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
-	defer cancel()
-	response, err := s.minioClient.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.minioBucket),
-		Key:    aws.String(s.lastBackup.Key),
-	})
+	reader, err := s.downloadedBackupZIP()
 	if err != nil {
-		return fmt.Errorf("download backup %q: %w", s.lastBackup.Key, err)
-	}
-	defer response.Body.Close()
-	archive, err := io.ReadAll(io.LimitReader(response.Body, 512<<20))
-	if err != nil {
-		return fmt.Errorf("read backup %q: %w", s.lastBackup.Key, err)
-	}
-	if int64(len(archive)) != s.lastBackup.Size {
-		return fmt.Errorf("downloaded archive size is %d, API reported %d", len(archive), s.lastBackup.Size)
-	}
-	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
-	if err != nil {
-		return fmt.Errorf("open backup ZIP: %w", err)
+		return err
 	}
 	names := make(map[string]struct{}, len(reader.File))
 	hasWorldData := false
@@ -297,6 +325,115 @@ func (s *scenarioState) uploadedBackupIsValid() error {
 	}
 	if !hasWorldData || !hasLevelDatabase {
 		return fmt.Errorf("backup ZIP does not contain generated world and LevelDB data")
+	}
+	return nil
+}
+
+func (s *scenarioState) uploadedBackupRetainsLegacyWorld() error {
+	reader, err := s.downloadedBackupZIP()
+	if err != nil {
+		return err
+	}
+	worldPrefix := "worlds/" + legacyWorldName + "/"
+	canaryEntry := worldPrefix + legacyCanaryName
+	hasLevelData := false
+	hasLevelDatabase := false
+	hasCanary := false
+	for _, file := range reader.File {
+		switch {
+		case file.Name == worldPrefix+"level.dat" && !file.FileInfo().IsDir():
+			hasLevelData = true
+		case strings.HasPrefix(file.Name, worldPrefix+"db/") && !file.FileInfo().IsDir() && file.UncompressedSize64 > 0:
+			hasLevelDatabase = true
+		case file.Name == canaryEntry && !file.FileInfo().IsDir():
+			stream, openErr := file.Open()
+			if openErr != nil {
+				return fmt.Errorf("open legacy canary from backup: %w", openErr)
+			}
+			contents, readErr := io.ReadAll(io.LimitReader(stream, 4<<10))
+			closeErr := stream.Close()
+			if readErr != nil {
+				return fmt.Errorf("read legacy canary from backup: %w", readErr)
+			}
+			if closeErr != nil {
+				return fmt.Errorf("close legacy canary from backup: %w", closeErr)
+			}
+			if string(contents) != legacyCanaryContents {
+				return fmt.Errorf("legacy canary contents are %q, want %q", contents, legacyCanaryContents)
+			}
+			hasCanary = true
+		}
+	}
+	if !hasLevelData || !hasLevelDatabase || !hasCanary {
+		return fmt.Errorf(
+			"backup retained legacy world level.dat=%t LevelDB=%t canary=%t",
+			hasLevelData,
+			hasLevelDatabase,
+			hasCanary,
+		)
+	}
+	return nil
+}
+
+func (s *scenarioState) downloadedBackupZIP() (*zip.Reader, error) {
+	archive, err := s.downloadedBackupBytes()
+	if err != nil {
+		return nil, err
+	}
+	reader, err := zip.NewReader(bytes.NewReader(archive), int64(len(archive)))
+	if err != nil {
+		return nil, fmt.Errorf("open backup ZIP: %w", err)
+	}
+	return reader, nil
+}
+
+func (s *scenarioState) downloadedBackupBytes() ([]byte, error) {
+	if s.minioClient == nil {
+		return nil, fmt.Errorf("MinIO client is not configured")
+	}
+	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer cancel()
+	response, err := s.minioClient.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.minioBucket),
+		Key:    aws.String(s.lastBackup.Key),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("download backup %q: %w", s.lastBackup.Key, err)
+	}
+	defer response.Body.Close()
+	archive, err := io.ReadAll(io.LimitReader(response.Body, 512<<20))
+	if err != nil {
+		return nil, fmt.Errorf("read backup %q: %w", s.lastBackup.Key, err)
+	}
+	if int64(len(archive)) != s.lastBackup.Size {
+		return nil, fmt.Errorf("downloaded archive size is %d, API reported %d", len(archive), s.lastBackup.Size)
+	}
+	return archive, nil
+}
+
+func (s *scenarioState) candidateHasNoPermissionErrors() error {
+	if s.candidate == "" {
+		return fmt.Errorf("candidate container is not running")
+	}
+	apiLogs, err := s.currentLogs()
+	if err != nil {
+		return err
+	}
+	containerLogs, err := s.containerLogs(s.candidate)
+	if err != nil {
+		return err
+	}
+	combined := strings.ToLower(apiLogs + "\n" + containerLogs)
+	for _, forbidden := range []string{
+		"permission denied",
+		"operation not permitted",
+		"read-only file system",
+		"failed to open leveldb",
+		"dbstorage chain is invalid",
+	} {
+		if strings.Contains(combined, forbidden) {
+			return fmt.Errorf("candidate logs contain filesystem failure %q", forbidden)
+		}
 	}
 	return nil
 }

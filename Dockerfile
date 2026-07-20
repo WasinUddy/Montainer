@@ -67,6 +67,8 @@ RUN mkdir -p /app/instance/worlds /app/configs /app/resource_packs /app/logs /ap
 COPY --from=bedrock --chown=montainer:montainer /out/ /app/instance/
 COPY --from=frontend --chown=montainer:montainer /src/web/dist/ /app/dist/
 COPY --from=go-builder --chown=montainer:montainer /out/montainer /app/montainer
+COPY --chown=root:root scripts/docker-entrypoint.sh /usr/local/bin/montainer-entrypoint
+RUN chmod 0755 /usr/local/bin/montainer-entrypoint
 
 ENV LISTEN_ADDR=:8000 \
     GIN_MODE=release \
@@ -75,15 +77,16 @@ ENV LISTEN_ADDR=:8000 \
     CONFIG_DIR=/app/configs \
     RESOURCE_PACKS_DIR=/app/resource_packs \
     LOG_DIR=/app/logs \
-    STATIC_DIR=/app/dist \
-    LD_LIBRARY_PATH=/app/instance
+    STATIC_DIR=/app/dist
 
-USER montainer
+# The entrypoint repairs pre-v3 root-owned mounts, drops every capability, and
+# execs Montainer as UID/GID 10001 before the application or Bedrock starts.
+USER root
 
 EXPOSE 8000 19132/udp 19133/udp
 VOLUME ["/app/instance/worlds", "/app/configs", "/app/resource_packs", "/app/logs"]
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=15s --retries=3 \
-    CMD curl --fail --silent --show-error http://127.0.0.1:8000/healthz || exit 1
+HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --retries=3 \
+    CMD ["/usr/local/bin/montainer-entrypoint", "__healthcheck"]
 
-ENTRYPOINT ["/app/montainer"]
+ENTRYPOINT ["/usr/local/bin/montainer-entrypoint"]

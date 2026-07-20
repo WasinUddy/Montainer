@@ -133,7 +133,7 @@ docker compose \
 
 The example Collector uses its debug exporter. Replace that exporter with OTLP, Loki, or a vendor exporter for production. Minecraft logs can contain player names, IP addresses, chat, and commands, so protect the telemetry destination accordingly.
 
-Only `http/protobuf` log export is supported in v2. `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` is used exactly as supplied; the generic `OTEL_EXPORTER_OTLP_ENDPOINT` receives `/v1/logs` automatically.
+Only `http/protobuf` log export is currently supported. `OTEL_EXPORTER_OTLP_LOGS_ENDPOINT` is used exactly as supplied; the generic `OTEL_EXPORTER_OTLP_ENDPOINT` receives `/v1/logs` automatically.
 
 ## Persistent data and container permissions
 
@@ -146,7 +146,88 @@ Only `http/protobuf` log export is supported in v2. `OTEL_EXPORTER_OTLP_LOGS_END
 
 Before each start, persistent configuration is copied into the Bedrock instance. On first run, packaged defaults are copied out to the configuration volume. Configuration is persisted again only after the child process has been reaped.
 
-The image runs as UID/GID `10001`. Docker-managed named volumes work without host preparation. For bind mounts on Linux, create the directories first and make them writable by that identity.
+Montainer and Bedrock run as UID/GID `10001`. The default Docker entrypoint starts as root, makes the configured Bedrock instance and persistence roots belong to that identity, migrates legacy root-owned entries below them, validates every required directory and file, then irrevocably drops its groups and capabilities before it starts Montainer. Mutating scans prune kernel-reported nested mounts, and the validation repeats on every start so a rollback or sidecar cannot leave newly inaccessible LevelDB files hidden behind stale migration state.
+
+Set `MONTAINER_AUTO_CHOWN=false` only when UID/GID `10001` already has the required access: read/write for the instance, worlds, configuration, and logs, and read access for resource packs. The migration rejects symbolic links in configured path components, internal symbolic links outside resource-pack trees, special files, protected system roots, and overlaps between configured roots (apart from the required `INSTANCE_DIR/worlds` nesting). Resource-pack symlinks remain supported and are handled without root dereferencing. The scan never changes entries below a nested mount and fails before Bedrock starts if ownership, modes, ACLs, or storage behavior still deny access. Custom `INSTANCE_DIR`, `CONFIG_DIR`, `RESOURCE_PACKS_DIR`, and `LOG_DIR` values are honored; point each at a distinct, dedicated data directory.
+
+The bootstrap requires exclusive access to those mounts. Do not let a sidecar or host process add mounts, replace path components, or rewrite the data tree while the ownership scan is running. For shared-writer storage, stop every writer and perform a one-time storage-side migration, then run with `MONTAINER_AUTO_CHOWN=false`.
+
+The image is configured as root so the entrypoint can repair existing Docker volumes. In the default bootstrap profile, the application, Bedrock child, and health probe all run as UID/GID `10001` with no capabilities and `no_new_privs`. Docker starts ad-hoc `exec` commands from the configured image identity, so use `docker compose exec --user 10001:10001 montainer ...` unless a deliberate recovery operation requires root.
+
+Preserve the image entrypoint. Overriding it with Kubernetes `command`, Compose `entrypoint`, or `docker run --entrypoint /app/montainer` bypasses migration and the root-to-`10001` security boundary. If an override is unavoidable, configure UID/GID `10001`, drop all capabilities, and enable `no-new-privileges` at the container runtime.
+
+An explicitly non-root container skips ownership migration and therefore requires already-accessible storage. Because a non-root process cannot clear its own kernel capability bounding set, also ask the container runtime to drop it; the entrypoint refuses a weaker configuration:
+
+```yaml
+services:
+  montainer:
+    user: "10001:10001"
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+```
+
+Kubernetes deployments can keep the container non-root with this security context:
+
+```yaml
+spec:
+  securityContext:
+    runAsNonRoot: true
+    runAsUser: 10001
+    runAsGroup: 10001
+    fsGroup: 10001
+    fsGroupChangePolicy: Always
+    seccompProfile:
+      type: RuntimeDefault
+  containers:
+    - name: montainer
+      securityContext:
+        allowPrivilegeEscalation: false
+        capabilities:
+          drop: ["ALL"]
+```
+
+This skips the root bootstrap. A CSI driver with volume-group support can make a pre-v3 PVC accessible through `fsGroup`; otherwise use a stopped one-time Job, init container, or storage-layer ACL/ownership change. Some CSI drivers perform the group change themselves and ignore `fsGroupChangePolicy`, so verify the resulting recursive access before starting Bedrock.
+
+To recover a volume before the fixed image is available, first stop Bedrock cleanly and take a raw volume snapshot. The following command targets the supplied Compose stack; for another deployment, run the equivalent command with its normal Compose file and environment options while the Montainer service remains stopped. Run it with the exact original Compose project identity—same directory and any `--project-name`/`COMPOSE_PROJECT_NAME` value—and inspect the resolved mounts first, otherwise Compose can create fresh volumes instead of repairing the server's real data.
+
+```bash
+docker compose \
+  --env-file examples/docker/.env \
+  -f examples/docker/docker-compose.yaml \
+  run --rm --no-deps --user 0:0 --entrypoint sh montainer -ceu '
+  for path in /app/instance /app/instance/worlds /app/configs /app/resource_packs /app/logs; do
+    [ -e "$path" ] || continue
+    mounts=$(findmnt -R -l -n -o TARGET --target "$path")
+    set -- "$path" -xdev
+    while IFS= read -r nested; do
+      case "$nested" in
+        *\\x[0-9A-Fa-f][0-9A-Fa-f]*)
+          printf "refusing escaped or control-character mount target below %s\n" "$path" >&2
+          exit 1
+          ;;
+      esac
+      case "$nested" in
+        "$path") ;;
+        "$path"/*)
+          pattern=$(printf "%s\n" "$nested" | sed "s/[][\\\\*?]/\\\\&/g")
+          set -- "$@" -path "$pattern" -prune -o
+          ;;
+      esac
+    done <<EOF
+$mounts
+EOF
+    set -- "$@" \
+      \( -type d -o \( \( -type f -o -type l \) -links 1 \) \) \
+      \( -uid 0 -o -gid 0 \) \
+      -exec chown --no-dereference 10001:10001 {} +
+    find "$@"
+  done
+'
+```
+
+This repair preserves non-root custom ownership, avoids multiply linked files, and prunes nested mounts. An inaccessible hardlink, a bind-mount root owned by another host UID, or storage that rejects ownership changes needs a deliberate host-side ownership or ACL decision. Do not add `--volumes` to a Compose shutdown command and do not run this while either the old or new Bedrock process is using LevelDB.
 
 Use a container or Kubernetes termination grace period of at least `90s` with the default lifecycle timeouts. If the timeouts are increased, allow at least:
 
@@ -168,6 +249,7 @@ Use a container or Kubernetes termination grace period of at least `90s` with th
 | `CONFIG_DIR` | Persistent configuration directory. | `./configs` (`/app/configs` in Docker) |
 | `RESOURCE_PACKS_DIR` | Persistent resource-pack source. | `./resource_packs` (`/app/resource_packs` in Docker) |
 | `STATIC_DIR` | Built frontend directory. | `./web/dist` (`/app/dist` in Docker) |
+| `MONTAINER_AUTO_CHOWN` | Docker entrypoint migrates legacy root-owned data before dropping privileges. | `true` |
 | `BEDROCK_AUTO_START` | Start Bedrock with Montainer. | `true` |
 | `BEDROCK_SHUTDOWN_TIMEOUT` | Graceful child-process stop timeout. | `15s` |
 | `BEDROCK_LIFECYCLE_TIMEOUT` | Timeout for each pre-start or post-stop filesystem phase. | `15s` |
@@ -280,11 +362,11 @@ GODOG_TAGS='@otel' go test -v -count=1 ./acceptance
 
 See [acceptance/README.md](acceptance/README.md) for binary overrides, temporary-workspace diagnostics, and the covered business behavior.
 
-A separate Docker acceptance suite exercises an already-built image with its packaged Mojang binary. It creates an isolated network and container stack per scenario and covers exact-version startup, RakNet discovery, concurrent lifecycle requests, OTLP export (`@otel-export`), Collector outage isolation (`@otel-outage`), shutdown flushing (`@otel-flush`), concurrent MinIO backups, ZIP integrity, and post-backup gameplay readiness. Stable releases also launch an offline virtual Bedrock player that must spawn, appear in the server player list, and receive a teleport movement packet.
+A separate Docker acceptance suite exercises an already-built image with its packaged Mojang binary. It creates an isolated network and container stack per scenario and covers exact-version startup, RakNet discovery, concurrent lifecycle requests, OTLP export (`@otel-export`), Collector outage isolation (`@otel-outage`), shutdown flushing (`@otel-flush`), concurrent MinIO backups, ZIP integrity, and post-backup gameplay readiness. Its stable-only upgrade shard creates logical scoreboard state with the digest-pinned pre-v3 image, reuses that image's root-owned volumes under the candidate, joins that upgraded world with a virtual player, downloads the S3 backup, restores it externally into fresh named volumes, and queries the same scoreboard state from that restored world. Separate scenarios cover a root-owned custom `INSTANCE_DIR`, literal same-device nested-mount pruning, and the runtime-hardened explicit non-root profile including its Docker health probe. Stable releases also launch an offline virtual Bedrock player that must spawn, appear in the server player list, and receive a teleport movement packet.
 
 ```bash
 GODOG_TAGS='@smoke' \
-MONTAINER_ACCEPTANCE_IMAGE='montainer:v2' \
+MONTAINER_ACCEPTANCE_IMAGE='montainer:local' \
 MONTAINER_EXPECTED_BEDROCK_VERSION="$(cat versions/stable.txt)" \
   go test -v -count=1 ./acceptance/realimage
 ```
@@ -295,19 +377,19 @@ MONTAINER_EXPECTED_BEDROCK_VERSION="$(cat versions/stable.txt)" \
 docker build \
   --build-arg SERVER_TYPE=stable \
   --build-arg BEDROCK_VERSION="$(cat versions/stable.txt)" \
-  -t montainer:v2 .
+  -t montainer:local .
 
 docker build \
   --build-arg SERVER_TYPE=preview \
   --build-arg BEDROCK_VERSION="$(cat versions/preview.txt)" \
-  -t montainer:v2-preview .
+  -t montainer:local-preview .
 ```
 
-The scraper records each channel's version, exact Mojang URL, and archive SHA-256 under `versions/`. The multi-stage build verifies that the URL matches the channel/version and that the downloaded bytes match the pinned checksum before producing the non-root AMD64 Debian runtime.
+The scraper records each channel's version, exact Mojang URL, and archive SHA-256 under `versions/`. The multi-stage build verifies that the URL matches the channel/version and that the downloaded bytes match the pinned checksum before producing the AMD64 Debian image. Its short root bootstrap handles legacy volume ownership; Montainer, Bedrock, and the health probe then run unprivileged.
 
 CI is one connected, numbered DAG. Stage 0 plans the affected release channels while Stage 1 runs a six-row quality matrix: frontend, Go/race/vet/actionlint, and four fake-Bedrock business groups. A main push reuses that matrix once rather than repeating it inside separate stable and preview workflows. Stable-only metadata changes select stable, preview-only metadata changes select preview, and common runtime changes select both. Selective routing is trusted only when the previous commit completed this delivery pipeline successfully; otherwise both channels run.
 
-Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to seven stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact, current Minecraft-version manifest, and recorded digest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 25 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
+Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to eight stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stable additionally upgrades a real root-owned legacy world and backs it up before promotion. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact, current Minecraft-version manifest, and recorded digest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 26 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
 
 ```mermaid
 flowchart LR
@@ -315,7 +397,7 @@ flowchart LR
     P --> PB["2 · Build preview"]
     Q["1 · Quality matrix ×6"] --> SB
     Q --> PB
-    SB --> SA["3 · Stable acceptance ×7"]
+    SB --> SA["3 · Stable acceptance ×8"]
     PB --> PA["3 · Preview acceptance ×6"]
     SA --> SP["4 · Promote stable"]
     PA --> PP["4 · Promote preview"]
@@ -329,14 +411,14 @@ The container image remains the deployment boundary, and the established managem
 - the backend is now a single Go binary rather than Python and Uvicorn;
 - Python runtime dependencies are no longer installed in the image;
 - direct binary runs read process environment variables only; use an explicit launcher or `--env-file` instead of relying on Pydantic `.env` loading;
-- the runtime user is UID/GID `10001`, so Linux bind mounts may need ownership changes;
+- Montainer and Bedrock run as UID/GID `10001`; the Docker entrypoint automatically migrates root-owned files in the Bedrock instance and four documented persistence roots, while explicitly non-root Kubernetes deployments require effective `fsGroup` handling or a one-time volume migration;
 - lifecycle operations are serialized and report explicit states instead of relying only on a boolean;
 - conflicting lifecycle requests now return `409`, an unconfigured backup returns `503`, and timeout/cancellation status mapping is more explicit;
 - HTTP and WebSocket clients are expected to be same-origin; cross-origin consumers should use a correctly configured reverse proxy;
 - logs are rotated and can fan out to OTLP without disabling local access; and
 - the image is explicitly built for `linux/amd64` because the Bedrock binary has no native ARM64 release; each channel publishes the exact Minecraft Bedrock version as its tag (for example, `1.26.33.2`) and overwrites that tag after a newly accepted Montainer rebuild, while release notes provide a digest-pinned reference for immutable deployments.
 
-Back up your existing volumes before upgrading. Reuse the same worlds, configs, and resource-pack mounts, ensure they are writable by UID/GID `10001`, and allow a `90s` termination grace period for the first v2 deployment.
+Stop Bedrock cleanly and take a raw snapshot of existing volumes before upgrading. Reuse the same worlds, configs, resource-pack, and log mounts; the default Docker startup performs the bounded ownership migration automatically. Do not delete, upload, or ask LevelDB to repair a world that still works on a pre-v3 image—the v3.0.1 `Permission denied (13)` failure was an ownership regression, not a world-format migration. Allow a `90s` termination grace period for the first v3 deployment.
 
 ## Contributing
 
