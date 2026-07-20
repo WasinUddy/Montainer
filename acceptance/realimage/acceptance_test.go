@@ -17,6 +17,7 @@ const (
 	expectedVersionEnv    = "MONTAINER_EXPECTED_BEDROCK_VERSION"
 	defaultCollectorImage = "otel/opentelemetry-collector-contrib:0.156.0@sha256:125bdbeb7590cc1952c5b3430ecf14063568980c2c93d5b38676cc0446ed8108"
 	defaultMinIOImage     = "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+	defaultLegacyImage    = "ghcr.io/wasinuddy/montainer-stable:1.26.33.1@sha256:e8cafa80a9ec6cd226eb9ea66f3177fd7925b56bee0bfc75556d8c0c3305f965"
 )
 
 type suiteHarness struct {
@@ -25,6 +26,7 @@ type suiteHarness struct {
 	expectedVersion string
 	collectorImage  string
 	minioImage      string
+	legacyImage     string
 	probeBinary     string
 	clientBinary    string
 	clientRequired  bool
@@ -57,9 +59,10 @@ func TestRealImageAcceptance(t *testing.T) {
 		expectedVersion: expectedVersion,
 		collectorImage:  envOrDefault("MONTAINER_OTEL_COLLECTOR_IMAGE", defaultCollectorImage),
 		minioImage:      envOrDefault("MONTAINER_MINIO_IMAGE", defaultMinIOImage),
+		legacyImage:     envOrDefault("MONTAINER_LEGACY_IMAGE", defaultLegacyImage),
 	}
 	tags := os.Getenv("GODOG_TAGS")
-	harness.clientRequired = tags == "" || strings.Contains(tags, "@client")
+	harness.clientRequired = tags == "" || strings.Contains(tags, "@client") || strings.Contains(tags, "@upgrade")
 	buildDir, err := os.MkdirTemp("", "montainer-real-image-tools-")
 	if err != nil {
 		t.Fatalf("create real-image tool directory: %v", err)
@@ -108,6 +111,7 @@ func (h *suiteHarness) validate() error {
 		"expected Bedrock version": h.expectedVersion,
 		"Collector image":          h.collectorImage,
 		"MinIO image":              h.minioImage,
+		"pre-v3 legacy image":      h.legacyImage,
 		"RakNet probe":             h.probeBinary,
 	} {
 		if strings.TrimSpace(value) == "" {

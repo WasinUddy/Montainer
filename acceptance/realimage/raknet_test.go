@@ -35,10 +35,15 @@ func (s *scenarioState) pingBedrockInNetwork() (bedrockAdvertisement, error) {
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 	defer cancel()
+	probeName := s.trackHelperContainer("raknet-probe")
 	output, err := s.docker(
 		ctx,
 		"run", "--rm",
+		"--name", probeName,
 		"--network", s.networkName,
+		"--user", "10001:10001",
+		"--cap-drop", "ALL",
+		"--security-opt", "no-new-privileges:true",
 		"--entrypoint", "/tmp/raknet-probe",
 		"--volume", s.suite.probeBinary+":/tmp/raknet-probe:ro",
 		s.suite.image,

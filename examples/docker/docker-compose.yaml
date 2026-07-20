@@ -21,6 +21,8 @@ services:
       minio-init:
         condition: service_completed_successfully
     stop_grace_period: 90s # Safe for default lifecycle timeouts; increase when customizing them
+    security_opt:
+      - no-new-privileges:true
     restart: unless-stopped
 
   minio:

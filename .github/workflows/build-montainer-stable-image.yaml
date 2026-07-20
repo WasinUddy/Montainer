@@ -10,7 +10,7 @@ on:
       - 'acceptance/**'
       - 'test/**'
       - 'examples/docker/**'
-      - 'scripts/download_minecraft_server.py'
+      - 'scripts/**'
       - 'go.mod'
       - 'go.sum'
       - 'Dockerfile'
@@ -151,7 +151,7 @@ jobs:
                     versions/preview.*)
                       preview=true
                       ;;
-                    cmd/*|internal/*|frontend/*|acceptance/*|test/*|examples/docker/*|scripts/download_minecraft_server.py|go.mod|go.sum|Dockerfile|.dockerignore|.github/scripts/validate_image_tag_contract.py|.github/workflows/ci.yaml|.github/workflows/build-test-promote-image.yaml|.github/workflows/promote-tested-image.yaml|.github/workflows/build-montainer-stable-image.yaml|.github/workflows/build-montainer-preview-image.yaml)
+                    cmd/*|internal/*|frontend/*|acceptance/*|test/*|examples/docker/*|scripts/*|go.mod|go.sum|Dockerfile|.dockerignore|.github/scripts/validate_image_tag_contract.py|.github/workflows/ci.yaml|.github/workflows/build-test-promote-image.yaml|.github/workflows/promote-tested-image.yaml|.github/workflows/build-montainer-stable-image.yaml|.github/workflows/build-montainer-preview-image.yaml)
                       stable=true
                       preview=true
                       ;;
@@ -203,7 +203,7 @@ jobs:
     with:
       server_type: stable
       version_file: versions/stable.txt
-      acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup", "client"]'
+      acceptance_suites: '["smoke", "lifecycle", "otel-export", "otel-outage", "otel-flush", "backup", "client", "upgrade"]'
 
   preview-image:
     name: Preview track

@@ -64,6 +64,7 @@ jobs:
               'otel-flush',
               'backup',
               'client',
+              'upgrade',
             ];
             const failedOrMissingSuites = requiredSuites.filter((suite) => {
               const job = latestJobEndingWith(`3 · Accept / stable / ${suite}`);

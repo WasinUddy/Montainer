@@ -56,12 +56,15 @@ Available real-image tags are:
 - `@otel-export`: export through the pinned real Collector;
 - `@otel-outage`: unavailable-Collector isolation;
 - `@otel-flush`: graceful-shutdown export flushing;
-- `@backup`: four concurrent saves, MinIO object verification, ZIP integrity, one restart, and gameplay recovery; and
-- `@client`: offline virtual-player spawn, authoritative `list` output, and receipt of a teleport movement packet.
+- `@backup`: four concurrent saves, MinIO object verification, ZIP integrity, one restart, and gameplay recovery;
+- `@client`: offline virtual-player spawn, authoritative `list` output, and receipt of a teleport movement packet; and
+- `@upgrade` (stable only): scenarios covering a genuine root-owned world and scoreboard marker created by the digest-pinned pre-v3 image, a virtual player joining and moving in that upgraded world, external restoration of its downloaded MinIO ZIP into fresh volumes where the same score must load, a root-owned custom `INSTANCE_DIR`, literal same-device nested-mount pruning, and explicit non-root startup with a working unprivileged health probe. Montainer PID 1 and its Bedrock child are checked for UID/GID, capabilities, and `no_new_privs`.
 
 The feature-level `@otel` tag still selects all three OTLP scenarios for a combined local run; CI uses the individual tags so they execute concurrently.
 
-Each scenario owns unique container names, an isolated Docker network, anonymous data volumes, writable non-root configuration, and dynamic host ports. Failed scenarios print Montainer, Collector, MinIO, and virtual-client logs before cleanup.
+`MONTAINER_LEGACY_IMAGE` can override the pinned pre-v3 fixture for local investigation. CI leaves it at the immutable `1.26.33.1` digest so the upgrade contract cannot move with a tag.
+
+Each scenario owns unique container names, an isolated Docker network, isolated persistence, writable non-root configuration, and dynamic host ports. The upgrade shard labels and explicitly removes every legacy, restore-verification, custom-instance, and nested-mount named volume after all containers are gone; other shards use anonymous volumes. Failed scenarios print Montainer, Collector, MinIO, and virtual-client logs before cleanup.
 
 The full client uses a separately pinned gophertunnel module under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. CI makes this a stable-image gate. Preview images always require RakNet discovery but omit the full join when the pinned test client has not yet added Mojang's preview protocol; this avoids mistaking a stale client library for a broken server image.
 
@@ -74,7 +77,7 @@ The connected delivery workflow uses numbered stages and matrices:
 1. `0 · Plan` safely selects stable, preview, or both from the changed paths. It uses a selective delta only after a successful delivery of the previous commit and falls back to both channels otherwise.
 2. `1 · Quality` runs frontend, Go/race/vet/actionlint, and the four fake-Bedrock tag groups as one six-row matrix shared by every selected channel.
 3. `2 · Build` verifies the recorded Mojang URL and SHA-256, builds each selected channel once, and exports a channel-specific Docker archive with a recorded archive SHA-256 and image ID.
-4. `3 · Accept` fans that exact artifact out to seven stable runners (`smoke`, `lifecycle`, the three OTLP tags, `backup`, and `client`) or six preview runners, omitting only the full virtual client.
+4. `3 · Accept` fans that exact artifact out to eight stable runners (`smoke`, `lifecycle`, the three OTLP tags, `backup`, `client`, and `upgrade`) or six preview runners, omitting the full virtual client and legacy-volume upgrade.
 5. `4 · Promote` receives package-write permission only after its channel's acceptance matrix succeeds, reloads the same artifact, overwrites the Minecraft-version tag with that accepted image, copies the same manifest to `latest`, and publishes a channel-specific digest identity record.
 6. `5 · Release` is connected directly to stable promotion. It validates the same-run identity and current version-tag manifest, records a digest-pinned image reference, then creates only an unreleased changelog version; existing tag/release pairs are a clean no-op and interrupted same-commit releases are retryable.
 

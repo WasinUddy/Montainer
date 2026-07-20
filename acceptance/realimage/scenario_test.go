@@ -42,6 +42,7 @@ type scenarioState struct {
 	configDir   string
 	networkName string
 	containers  []string
+	volumes     []string
 	candidate   string
 	collector   string
 	minio       string
@@ -59,6 +60,10 @@ type scenarioState struct {
 	concurrentResults []requestResult
 	lastBackup        backupResult
 	lastAdvertisement bedrockAdvertisement
+	legacyMounts      []volumeMount
+	legacyScore       int
+	legacyChecks      int
+	explicitNonRoot   bool
 }
 
 func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
@@ -70,6 +75,10 @@ func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the configured OpenTelemetry Collector is unavailable$`, s.configureUnavailableCollector)
 	ctx.Step(`^log export batching is delayed until shutdown$`, s.delayOTelUntilShutdown)
 	ctx.Step(`^S3-compatible MinIO storage is available$`, s.startMinIO)
+	ctx.Step(`^a genuine root-owned legacy world exists on named volumes$`, s.seedRootOwnedLegacyWorld)
+	ctx.Step(`^a root-owned custom pre-v3 Bedrock instance exists$`, s.rootOwnedCustomInstanceExists)
+	ctx.Step(`^an accessible root-owned nested persistence mount exists$`, s.accessibleRootOwnedNestedMountExists)
+	ctx.Step(`^the candidate is configured for explicit non-root execution$`, s.configureExplicitNonRootCandidate)
 	ctx.Step(`^I start the candidate with the packaged Bedrock server$`, s.startCandidate)
 	ctx.Step(`^the management API eventually becomes healthy$`, s.apiEventuallyHealthy)
 	ctx.Step(`^the management API remains healthy$`, s.apiHealthy)
@@ -89,6 +98,15 @@ func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^I request (\d+) backups concurrently$`, s.requestBackupsConcurrently)
 	ctx.Step(`^exactly one backup succeeds and the others conflict$`, s.oneBackupSucceeds)
 	ctx.Step(`^the uploaded backup is a valid Montainer archive$`, s.uploadedBackupIsValid)
+	ctx.Step(`^the uploaded backup retains the legacy world database and canary$`, s.uploadedBackupRetainsLegacyWorld)
+	ctx.Step(`^I restore the uploaded backup into fresh named volumes$`, s.restoreUploadedBackupIntoFreshNamedVolumes)
+	ctx.Step(`^the legacy scoreboard state is preserved$`, s.legacyScoreboardStateIsPreserved)
+	ctx.Step(`^the upgraded persistence data belongs to UID and GID 10001$`, s.upgradedPersistenceOwnedByMontainer)
+	ctx.Step(`^the custom instance and persistence data belong to UID and GID 10001$`, s.customInstancePersistenceOwnedByMontainer)
+	ctx.Step(`^the parent data migrates while the nested mount stays root-owned$`, s.nestedMountOwnershipIsPreserved)
+	ctx.Step(`^Montainer PID 1 and Bedrock run as UID 10001$`, s.candidateProcessesRunAsMontainer)
+	ctx.Step(`^the candidate container eventually becomes healthy$`, s.candidateContainerEventuallyHealthy)
+	ctx.Step(`^the candidate reports no filesystem permission errors$`, s.candidateHasNoPermissionErrors)
 	ctx.Step(`^I stop the candidate container$`, s.stopCandidate)
 	ctx.Step(`^the candidate container exits cleanly$`, s.candidateExitedCleanly)
 	ctx.Step(`^the virtual Bedrock player joins$`, s.startVirtualClient)
@@ -129,6 +147,7 @@ func (s *scenarioState) prepare() error {
 	s.configDir = filepath.Join(tmpDir, "configs")
 	s.networkName = "montainer-real-" + suffix
 	s.containers = nil
+	s.volumes = nil
 	s.candidate = ""
 	s.collector = ""
 	s.minio = ""
@@ -143,6 +162,10 @@ func (s *scenarioState) prepare() error {
 	s.concurrentResults = nil
 	s.lastBackup = backupResult{}
 	s.lastAdvertisement = bedrockAdvertisement{}
+	s.legacyMounts = nil
+	s.legacyScore = 4242
+	s.legacyChecks = 0
+	s.explicitNonRoot = false
 	s.env = map[string]string{
 		"INSTANCE_NAME":                   instanceName,
 		"BEDROCK_AUTO_START":              "true",
@@ -215,6 +238,12 @@ func (s *scenarioState) cleanup() error {
 	for index := len(s.containers) - 1; index >= 0; index-- {
 		if _, err := s.docker(ctx, "rm", "--force", "--volumes", s.containers[index]); err != nil &&
 			!strings.Contains(err.Error(), "No such container") && cleanupErr == nil {
+			cleanupErr = err
+		}
+	}
+	for index := len(s.volumes) - 1; index >= 0; index-- {
+		if _, err := s.docker(ctx, "volume", "rm", "--force", s.volumes[index]); err != nil &&
+			!strings.Contains(err.Error(), "No such volume") && cleanupErr == nil {
 			cleanupErr = err
 		}
 	}

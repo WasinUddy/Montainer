@@ -196,3 +196,7 @@ jobs:
           for network in "${networks[@]}"; do
             docker network rm "$network" || true
           done
+          mapfile -t volumes < <(docker volume ls -q --filter 'label=io.montainer.acceptance=real-image')
+          if [ "${#volumes[@]}" -gt 0 ]; then
+            docker volume rm --force "${volumes[@]}"
+          fi
