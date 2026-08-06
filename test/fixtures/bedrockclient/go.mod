@@ -4,7 +4,7 @@ go 1.26
 
 require (
 	github.com/sandertv/go-raknet v1.14.3-0.20250305181847-6af3e95113d6
-	github.com/sandertv/gophertunnel v1.57.1
+	github.com/sandertv/gophertunnel v1.57.2-0.20260805193201-58dd5f9f9fef
 )
 
 require (
