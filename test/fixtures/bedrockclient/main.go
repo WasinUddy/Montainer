@@ -126,11 +126,12 @@ func main() {
 			math.Abs(float64(movement.Position[2])-expectedPosition[2]) > *positionTolerance) {
 			continue
 		}
+		teleportData, _ := movement.TeleportData.Value()
 		fmt.Printf(
 			"teleported runtime_id=%d position=%.2f,%.2f,%.2f cause=%d tick=%d\n",
 			movement.EntityRuntimeID,
 			movement.Position[0], movement.Position[1], movement.Position[2],
-			movement.TeleportCause,
+			teleportData.TeleportCause,
 			movement.Tick,
 		)
 		return
