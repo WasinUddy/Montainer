@@ -146,17 +146,25 @@ Only `http/protobuf` log export is currently supported. `OTEL_EXPORTER_OTLP_LOGS
 
 Before each start, persistent configuration is copied into the Bedrock instance. On first run, packaged defaults are copied out to the configuration volume. Configuration is persisted again only after the child process has been reaped.
 
-Montainer and Bedrock run as UID/GID `10001`. The default Docker entrypoint starts as root, makes the configured Bedrock instance and persistence roots belong to that identity, migrates legacy root-owned entries below them, validates every required directory and file, then irrevocably drops its groups and capabilities before it starts Montainer. Mutating scans prune kernel-reported nested mounts, and the validation repeats on every start so a rollback or sidecar cannot leave newly inaccessible LevelDB files hidden behind stale migration state.
+Montainer and Bedrock run as whoever already owns the world data. On startup the Docker entrypoint reads the ownership of `INSTANCE_DIR/worlds`, adopts that UID and GID for both processes, and then drops its groups and capabilities before starting Montainer. Nothing about the identity is baked into the image, so upgrading an existing server does not change what its files must look like: a world written by a pre-v3 root container keeps running as root, and a bind mount owned by an ordinary host account keeps running as that account. Existing world data is never rewritten.
 
-Set `MONTAINER_AUTO_CHOWN=false` only when UID/GID `10001` already has the required access: read/write for the instance, worlds, configuration, and logs, and read access for resource packs. The migration rejects symbolic links in configured path components, internal symbolic links outside resource-pack trees, special files, protected system roots, and overlaps between configured roots (apart from the required `INSTANCE_DIR/worlds` nesting). Resource-pack symlinks remain supported and are handled without root dereferencing. The scan never changes entries below a nested mount and fails before Bedrock starts if ownership, modes, ACLs, or storage behavior still deny access. Custom `INSTANCE_DIR`, `CONFIG_DIR`, `RESOURCE_PACKS_DIR`, and `LOG_DIR` values are honored; point each at a distinct, dedicated data directory.
+Adopting the data's identity means a server whose files are root-owned runs as root, exactly as it did before v3. Bedrock parses untrusted traffic from the internet, so moving it off root is worth doing; set `PUID` and `PGID` to choose the identity explicitly, and new deployments should set them from the start:
 
-The bootstrap requires exclusive access to those mounts. Do not let a sidecar or host process add mounts, replace path components, or rewrite the data tree while the ownership scan is running. For shared-writer storage, stop every writer and perform a one-time storage-side migration, then run with `MONTAINER_AUTO_CHOWN=false`.
+```yaml
+services:
+  montainer:
+    environment:
+      PUID: 1000
+      PGID: 1000
+```
 
-The image is configured as root so the entrypoint can repair existing Docker volumes. In the default bootstrap profile, the application, Bedrock child, and health probe all run as UID/GID `10001` with no capabilities and `no_new_privs`. Docker starts ad-hoc `exec` commands from the configured image identity, so use `docker compose exec --user 10001:10001 montainer ...` unless a deliberate recovery operation requires root.
+Naming an identity that the data does not already use is treated as a request to make that identity work, so the persistence roots are recursively re-owned once to match. This is the only case in which Montainer changes the ownership of your data. Choosing the identity that the data already has, or omitting both variables, never triggers it.
 
-Preserve the image entrypoint. Overriding it with Kubernetes `command`, Compose `entrypoint`, or `docker run --entrypoint /app/montainer` bypasses migration and the root-to-`10001` security boundary. If an override is unavoidable, configure UID/GID `10001`, drop all capabilities, and enable `no-new-privileges` at the container runtime.
+Two directory groups are treated differently on every start, whichever way the identity was resolved. `INSTANCE_DIR` holds image content — the Bedrock binary and its shared libraries — and is re-owned recursively so the runtime identity can execute it; the world directory below it is skipped. The four persistence roots are only re-owned at their top level, which is what a freshly created Docker volume needs, leaving the data inside them alone. Ownership changes are best-effort: storage that refuses `chown` while still granting access, such as root-squashed NFS or SMB, logs a warning and starts anyway.
 
-An explicitly non-root container skips ownership migration and therefore requires already-accessible storage. Because a non-root process cannot clear its own kernel capability bounding set, also ask the container runtime to drop it; the entrypoint refuses a weaker configuration:
+Custom `INSTANCE_DIR`, `CONFIG_DIR`, `RESOURCE_PACKS_DIR`, and `LOG_DIR` values are honored; point each at a distinct, dedicated data directory.
+
+Setting `user:` on the container takes precedence over all of the above. A non-root container cannot change ownership, so the entrypoint makes no attempt to and simply starts Montainer as the identity you selected — which means the storage has to be usable by it already. `PUID`/`PGID` is the easier route when it is not, because the entrypoint still has the privileges to fix it.
 
 ```yaml
 services:
@@ -168,7 +176,7 @@ services:
       - no-new-privileges:true
 ```
 
-Kubernetes deployments can keep the container non-root with this security context:
+`10001` is the identity the image's own files are built with, so it is the value that works without preparing storage first. Kubernetes deployments can use the equivalent security context:
 
 ```yaml
 spec:
@@ -188,46 +196,7 @@ spec:
           drop: ["ALL"]
 ```
 
-This skips the root bootstrap. A CSI driver with volume-group support can make a pre-v3 PVC accessible through `fsGroup`; otherwise use a stopped one-time Job, init container, or storage-layer ACL/ownership change. Some CSI drivers perform the group change themselves and ignore `fsGroupChangePolicy`, so verify the resulting recursive access before starting Bedrock.
-
-To recover a volume before the fixed image is available, first stop Bedrock cleanly and take a raw volume snapshot. The following command targets the supplied Compose stack; for another deployment, run the equivalent command with its normal Compose file and environment options while the Montainer service remains stopped. Run it with the exact original Compose project identity—same directory and any `--project-name`/`COMPOSE_PROJECT_NAME` value—and inspect the resolved mounts first, otherwise Compose can create fresh volumes instead of repairing the server's real data.
-
-```bash
-docker compose \
-  --env-file examples/docker/.env \
-  -f examples/docker/docker-compose.yaml \
-  run --rm --no-deps --user 0:0 --entrypoint sh montainer -ceu '
-  for path in /app/instance /app/instance/worlds /app/configs /app/resource_packs /app/logs; do
-    [ -e "$path" ] || continue
-    mounts=$(findmnt -R -l -n -o TARGET --target "$path")
-    set -- "$path" -xdev
-    while IFS= read -r nested; do
-      case "$nested" in
-        *\\x[0-9A-Fa-f][0-9A-Fa-f]*)
-          printf "refusing escaped or control-character mount target below %s\n" "$path" >&2
-          exit 1
-          ;;
-      esac
-      case "$nested" in
-        "$path") ;;
-        "$path"/*)
-          pattern=$(printf "%s\n" "$nested" | sed "s/[][\\\\*?]/\\\\&/g")
-          set -- "$@" -path "$pattern" -prune -o
-          ;;
-      esac
-    done <<EOF
-$mounts
-EOF
-    set -- "$@" \
-      \( -type d -o \( \( -type f -o -type l \) -links 1 \) \) \
-      \( -uid 0 -o -gid 0 \) \
-      -exec chown --no-dereference 10001:10001 {} +
-    find "$@"
-  done
-'
-```
-
-This repair preserves non-root custom ownership, avoids multiply linked files, and prunes nested mounts. An inaccessible hardlink, a bind-mount root owned by another host UID, or storage that rejects ownership changes needs a deliberate host-side ownership or ACL decision. Do not add `--volumes` to a Compose shutdown command and do not run this while either the old or new Bedrock process is using LevelDB.
+Preserve the image entrypoint. Overriding it with Kubernetes `command`, Compose `entrypoint`, or `docker run --entrypoint /app/montainer` skips identity resolution, so Montainer runs as whatever the runtime selected against storage that may not match.
 
 Use a container or Kubernetes termination grace period of at least `90s` with the default lifecycle timeouts. If the timeouts are increased, allow at least:
 
@@ -249,7 +218,8 @@ Use a container or Kubernetes termination grace period of at least `90s` with th
 | `CONFIG_DIR` | Persistent configuration directory. | `./configs` (`/app/configs` in Docker) |
 | `RESOURCE_PACKS_DIR` | Persistent resource-pack source. | `./resource_packs` (`/app/resource_packs` in Docker) |
 | `STATIC_DIR` | Built frontend directory. | `./web/dist` (`/app/dist` in Docker) |
-| `MONTAINER_AUTO_CHOWN` | Docker entrypoint migrates legacy root-owned data before dropping privileges. | `true` |
+| `PUID` | Run as this user ID instead of the one that owns the world data. | ownership of `INSTANCE_DIR/worlds` |
+| `PGID` | Run as this group ID instead of the one that owns the world data. | ownership of `INSTANCE_DIR/worlds` |
 | `BEDROCK_AUTO_START` | Start Bedrock with Montainer. | `true` |
 | `BEDROCK_SHUTDOWN_TIMEOUT` | Graceful child-process stop timeout. | `15s` |
 | `BEDROCK_LIFECYCLE_TIMEOUT` | Timeout for each pre-start or post-stop filesystem phase. | `15s` |
@@ -411,14 +381,14 @@ The container image remains the deployment boundary, and the established managem
 - the backend is now a single Go binary rather than Python and Uvicorn;
 - Python runtime dependencies are no longer installed in the image;
 - direct binary runs read process environment variables only; use an explicit launcher or `--env-file` instead of relying on Pydantic `.env` loading;
-- Montainer and Bedrock run as UID/GID `10001`; the Docker entrypoint automatically migrates root-owned files in the Bedrock instance and four documented persistence roots, while explicitly non-root Kubernetes deployments require effective `fsGroup` handling or a one-time volume migration;
+- Montainer and Bedrock run as whoever owns the world data, so a pre-v3 root-owned volume keeps working unchanged; set `PUID`/`PGID` to move an existing server onto an unprivileged identity;
 - lifecycle operations are serialized and report explicit states instead of relying only on a boolean;
 - conflicting lifecycle requests now return `409`, an unconfigured backup returns `503`, and timeout/cancellation status mapping is more explicit;
 - HTTP and WebSocket clients are expected to be same-origin; cross-origin consumers should use a correctly configured reverse proxy;
 - logs are rotated and can fan out to OTLP without disabling local access; and
 - the image is explicitly built for `linux/amd64` because the Bedrock binary has no native ARM64 release; each channel publishes the exact Minecraft Bedrock version as its tag (for example, `1.26.33.2`) and overwrites that tag after a newly accepted Montainer rebuild, while release notes provide a digest-pinned reference for immutable deployments.
 
-Stop Bedrock cleanly and take a raw snapshot of existing volumes before upgrading. Reuse the same worlds, configs, resource-pack, and log mounts; the default Docker startup performs the bounded ownership migration automatically. Do not delete, upload, or ask LevelDB to repair a world that still works on a pre-v3 image—the v3.0.1 `Permission denied (13)` failure was an ownership regression, not a world-format migration. Allow a `90s` termination grace period for the first v3 deployment.
+Stop Bedrock cleanly and take a raw snapshot of existing volumes before upgrading. Reuse the same worlds, configs, resource-pack, and log mounts; startup adopts their existing ownership, so no migration step is required. Do not delete, upload, or ask LevelDB to repair a world that still works on a pre-v3 image—the `Permission denied (13)` failure in v3.0.0 and v3.0.1 was an ownership regression, not a world-format migration. Allow a `90s` termination grace period for the first v3 deployment.
 
 ## Contributing
 

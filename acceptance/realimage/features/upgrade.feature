@@ -1,8 +1,8 @@
 @real-image @upgrade
-Feature: Upgrade a legacy root-owned Bedrock world
+Feature: Run an existing Bedrock world under any ownership
   As a Montainer release maintainer
-  I want pre-v3 named volumes to migrate without losing their world
-  So that an ownership change cannot make an existing server unusable
+  I want the runtime identity to follow whoever owns the world data
+  So that an ownership assumption cannot make an existing server unusable
 
   Scenario: A root-owned world remains playable and backup-safe after upgrade
     Given the candidate Montainer image is available
@@ -13,8 +13,8 @@ Feature: Upgrade a legacy root-owned Bedrock world
     And the packaged Bedrock server eventually reports running
     And a RakNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
-    And the upgraded persistence data belongs to UID and GID 10001
-    And Montainer PID 1 and Bedrock run as UID 10001
+    And the persistence data still belongs to UID and GID 0
+    And Montainer PID 1 and Bedrock run as UID 0 and GID 0
     When the virtual Bedrock player joins
     And I send the real server command "tp MontainerCI 12000 100 -12000"
     Then the virtual Bedrock player receives the teleport
@@ -27,18 +27,43 @@ Feature: Upgrade a legacy root-owned Bedrock world
     And the process generation increases by 1
     And a RakNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
-    And Montainer PID 1 and Bedrock run as UID 10001
     And the candidate reports no filesystem permission errors
     When I restore the uploaded backup into fresh named volumes
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
     And a RakNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
-    And the upgraded persistence data belongs to UID and GID 10001
-    And Montainer PID 1 and Bedrock run as UID 10001
     And the candidate reports no filesystem permission errors
     When I stop the candidate container
     Then the candidate container exits cleanly
+
+  Scenario: A world owned by an arbitrary host UID runs without being rewritten
+    Given the candidate Montainer image is available
+    And a genuine legacy world owned by UID and GID 1234 exists on named volumes
+    When I start the candidate with the packaged Bedrock server
+    Then the management API eventually becomes healthy
+    And the packaged Bedrock server eventually reports running
+    And a RakNet client can eventually discover the Bedrock server
+    And the legacy scoreboard state is preserved
+    And the persistence data still belongs to UID and GID 1234
+    And Montainer PID 1 and Bedrock run as UID 1234 and GID 1234
+    And the candidate container eventually becomes healthy
+    And the candidate reports no filesystem permission errors
+    When I stop the candidate container
+    Then the candidate container exits cleanly
+
+  Scenario: PUID and PGID override the identity taken from the world data
+    Given the candidate Montainer image is available
+    And a genuine root-owned legacy world exists on named volumes
+    And the candidate is configured with PUID 1500 and PGID 1600
+    When I start the candidate with the packaged Bedrock server
+    Then the management API eventually becomes healthy
+    And the packaged Bedrock server eventually reports running
+    And a RakNet client can eventually discover the Bedrock server
+    And the legacy scoreboard state is preserved
+    And the persistence data belongs to UID 1500 and GID 1600
+    And Montainer PID 1 and Bedrock run as UID 1500 and GID 1600
+    And the candidate reports no filesystem permission errors
 
   Scenario: A root-owned custom instance is writable before config restoration
     Given the candidate Montainer image is available
@@ -47,8 +72,7 @@ Feature: Upgrade a legacy root-owned Bedrock world
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
     And a RakNet client can eventually discover the Bedrock server
-    And the custom instance and persistence data belong to UID and GID 10001
-    And Montainer PID 1 and Bedrock run as UID 10001
+    And Montainer PID 1 and Bedrock run as UID 0 and GID 0
     And the candidate reports no filesystem permission errors
 
   Scenario: Explicit non-root execution keeps the image health probe working
@@ -59,16 +83,5 @@ Feature: Upgrade a legacy root-owned Bedrock world
     And the packaged Bedrock server eventually reports running
     And a RakNet client can eventually discover the Bedrock server
     And the candidate container eventually becomes healthy
-    And Montainer PID 1 and Bedrock run as UID 10001
+    And Montainer PID 1 and Bedrock run as UID 10001 and GID 10001
     And the candidate reports no filesystem permission errors
-
-  Scenario: A same-device nested mount is never included in ownership migration
-    Given the candidate Montainer image is available
-    And an accessible root-owned nested persistence mount exists
-    When I start the candidate with the packaged Bedrock server
-    Then the management API eventually becomes healthy
-    And the candidate container eventually becomes healthy
-    And the parent data migrates while the nested mount stays root-owned
-    And the candidate reports no filesystem permission errors
-    When I stop the candidate container
-    Then the candidate container exits cleanly

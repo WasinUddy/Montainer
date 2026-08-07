@@ -1,5 +1,15 @@
 # Changelog
 
+## [Unreleased]
+### Fixed
+- Resolve the runtime identity from the ownership of the world data instead of requiring UID/GID `10001`, so a pre-v3 root-owned volume and a bind mount owned by an ordinary host account both start without intervention.
+- Stop rewriting the ownership of existing world, configuration, resource-pack, and log data. Only `INSTANCE_DIR` image content and the top level of each persistence root are re-owned, and ownership changes that storage refuses now warn and continue instead of aborting the boot.
+- Accept `PUID` and `PGID` to select an identity explicitly, recursively re-owning the persistence roots once when the chosen identity differs from the data's.
+- Respect a container-level `user:` or `runAsUser` of any value rather than failing to start unless it is exactly `10001:10001`.
+
+### Changed
+- The Docker health probe is a direct `curl` again rather than a privileged entrypoint subcommand.
+
 ## [3.0.2] - 2026-07-20
 ### Fixed
 - On every Docker start, safely migrate and recursively validate pre-v3 instance and persistence data without following symlinked paths or crossing nested mounts, then drop all privileges and run Montainer, Bedrock, and the health probe as UID/GID `10001`.
