@@ -27,9 +27,6 @@ const (
 	legacyPlayerName       = "LegacyMarker"
 	legacyCanaryName       = "montainer-legacy-canary.txt"
 	legacyCanaryContents   = "Montainer legacy world acceptance canary\n"
-	nestedMountDirectory   = "nested[1]"
-	nestedParentCanary     = "parent-must-migrate.txt"
-	nestedMountCanary      = "nested-must-stay-root.txt"
 	acceptanceVolumeLabel  = "io.montainer.acceptance=real-image"
 	containerInstanceRoot  = "/app/instance"
 	containerWorldsRoot    = containerInstanceRoot + "/worlds"
@@ -192,6 +189,13 @@ func (s *scenarioState) startMinIO() error {
 }
 
 func (s *scenarioState) seedRootOwnedLegacyWorld() error {
+	return s.seedLegacyWorldOwnedBy("0")
+}
+
+// seedLegacyWorldOwnedBy builds a world with the real pre-v3 image, which runs
+// as root, then hands it to the requested owner. That models both an untouched
+// pre-v3 upgrade and a host bind mount owned by an ordinary user account.
+func (s *scenarioState) seedLegacyWorldOwnedBy(owner string) error {
 	if s.candidate != "" {
 		return fmt.Errorf("legacy world must be seeded before the candidate starts")
 	}
@@ -280,13 +284,13 @@ func (s *scenarioState) seedRootOwnedLegacyWorld() error {
 	if err := s.stopLegacyServerAndContainer(); err != nil {
 		return err
 	}
-	if err := s.createLegacyCanaryAndVerifyRootOwnership(); err != nil {
+	if err := s.createLegacyCanaryAndVerifyOwnership(owner); err != nil {
 		return err
 	}
 
 	// The next candidate must reuse these volumes through the image's normal
-	// entrypoint so the upgrade path, rather than the seeding process, owns the
-	// migration from root to the unprivileged runtime identity.
+	// entrypoint so that the resolved runtime identity, rather than the seeding
+	// process, is what the scenario actually exercises.
 	s.candidate = ""
 	s.baseURL = ""
 	s.udpAddress = ""
@@ -346,59 +350,6 @@ func (s *scenarioState) rootOwnedCustomInstanceExists() error {
 	}
 
 	s.env["INSTANCE_DIR"] = containerCustomRoot
-	return nil
-}
-
-func (s *scenarioState) accessibleRootOwnedNestedMountExists() error {
-	if s.candidate != "" {
-		return fmt.Errorf("nested mount must be prepared before the candidate starts")
-	}
-	if len(s.legacyMounts) != 0 {
-		return fmt.Errorf("nested-mount volumes have already been created")
-	}
-	nestedDestination := containerWorldsRoot + "/" + nestedMountDirectory
-	s.legacyMounts = []volumeMount{
-		{name: s.networkName + "-nested-parent", destination: containerWorldsRoot},
-		{name: s.networkName + "-nested-child", destination: nestedDestination},
-		{name: s.networkName + "-nested-configs", destination: containerConfigsRoot},
-		{name: s.networkName + "-nested-resources", destination: containerResourcesRoot},
-		{name: s.networkName + "-nested-logs", destination: containerLogsRoot},
-	}
-	if err := s.createAcceptanceVolumes(s.legacyMounts); err != nil {
-		return err
-	}
-
-	arguments := []string{
-		"run", "--name", s.trackHelperContainer("nested-mount-seed"),
-		"--platform", "linux/amd64",
-		"--user", "0:0",
-		"--entrypoint", "/bin/sh",
-	}
-	for _, mount := range s.legacyMounts {
-		arguments = append(arguments, "--volume", mount.name+":"+mount.destination)
-	}
-	arguments = append(
-		arguments,
-		s.suite.image,
-		"-ceu",
-		`printf 'parent\n' > "$1/$3"
-		printf 'nested\n' > "$2/$4"
-		chown -R 0:0 "$1" "$2" "$5" "$6" "$7"
-		chmod 0777 "$2"
-		chmod 0666 "$2/$4"`,
-		"sh",
-		containerWorldsRoot,
-		nestedDestination,
-		nestedParentCanary,
-		nestedMountCanary,
-		containerConfigsRoot,
-		containerResourcesRoot,
-		containerLogsRoot,
-	)
-	if _, err := s.dockerWithin(60*time.Second, arguments...); err != nil {
-		return fmt.Errorf("prepare accessible root-owned nested mount: %w", err)
-	}
-	s.env["BEDROCK_AUTO_START"] = "false"
 	return nil
 }
 
@@ -479,7 +430,7 @@ func (s *scenarioState) stopLegacyServerAndContainer() error {
 	return nil
 }
 
-func (s *scenarioState) createLegacyCanaryAndVerifyRootOwnership() error {
+func (s *scenarioState) createLegacyCanaryAndVerifyOwnership(owner string) error {
 	arguments := []string{
 		"run", "--name", s.trackHelperContainer("legacy-volume-inspect"),
 		"--platform", "linux/amd64",
@@ -495,15 +446,16 @@ func (s *scenarioState) createLegacyCanaryAndVerifyRootOwnership() error {
 		"-ceu",
 		`world=$1
 		canary="$world/$2"
+		owner=$8
 		test -s "$world/level.dat"
 		database_file=$(find "$world/db" -type f -size +0c -print -quit)
 		test -n "$database_file"
 		printf '%s' "$3" > "$canary"
-		chown 0:0 "$canary"
 		for root in "$4" "$5" "$6" "$7"; do
-			unexpected=$(find "$root" -xdev \( -type d -o -type f -o -type l \) \( ! -uid 0 -o ! -gid 0 \) -print -quit)
+			chown -R "$owner:$owner" "$root"
+			unexpected=$(find "$root" -xdev \( -type d -o -type f -o -type l \) \( ! -uid "$owner" -o ! -gid "$owner" \) -print -quit)
 			test -z "$unexpected" || {
-				printf 'non-root legacy entry: %s\n' "$unexpected" >&2
+				printf 'unexpected legacy entry owner: %s\n' "$unexpected" >&2
 				exit 1
 			}
 		done`,
@@ -515,9 +467,10 @@ func (s *scenarioState) createLegacyCanaryAndVerifyRootOwnership() error {
 		containerConfigsRoot,
 		containerResourcesRoot,
 		containerLogsRoot,
+		owner,
 	)
 	if _, err := s.dockerWithin(60*time.Second, arguments...); err != nil {
-		return fmt.Errorf("verify genuine root-owned pre-v3 persistence: %w", err)
+		return fmt.Errorf("verify genuine pre-v3 persistence owned by %s: %w", owner, err)
 	}
 	return nil
 }
@@ -539,6 +492,15 @@ func (s *scenarioState) configureExplicitNonRootCandidate() error {
 		return fmt.Errorf("explicit non-root mode must be configured before the candidate starts")
 	}
 	s.explicitNonRoot = true
+	return nil
+}
+
+func (s *scenarioState) configureRequestedIdentity(puid, pgid string) error {
+	if s.candidate != "" {
+		return fmt.Errorf("PUID and PGID must be configured before the candidate starts")
+	}
+	s.env["PUID"] = puid
+	s.env["PGID"] = pgid
 	return nil
 }
 
@@ -690,9 +652,9 @@ with zipfile.ZipFile(archive_path) as archive:
 		return fmt.Errorf("extract uploaded backup into fresh volumes: %w", err)
 	}
 
-	// Exercise the same ownership migration on the externally restored,
-	// root-owned archive rather than continuing against the original live
-	// volumes. This proves the uploaded LevelDB snapshot itself is usable.
+	// Resolve the identity again against the externally restored, root-owned
+	// archive rather than continuing against the original live volumes. This
+	// proves the uploaded LevelDB snapshot itself is usable.
 	s.legacyMounts = restoredMounts
 	s.candidate = ""
 	s.baseURL = ""
@@ -700,64 +662,6 @@ with zipfile.ZipFile(archive_path) as archive:
 	restoredName := strings.Replace(s.networkName, "montainer-real-", "montainer-restored-", 1)
 	if err := s.startCandidateContainer(restoredName, s.suite.image); err != nil {
 		return fmt.Errorf("start candidate from restored backup: %w", err)
-	}
-	return nil
-}
-
-func (s *scenarioState) customInstancePersistenceOwnedByMontainer() error {
-	if s.candidate == "" {
-		return fmt.Errorf("candidate container is not running")
-	}
-	return eventually("custom instance persistence to belong to UID/GID 10001", 30*time.Second, func() error {
-		_, err := s.dockerWithin(
-			10*time.Second,
-			"exec", "--user", "10001:10001", s.candidate,
-			"/bin/sh", "-ceu",
-			`test -s "$1/server.properties"
-			test -s "$1/worlds/$5/level.dat"
-			test -f "$2/server.properties"
-			test -f "$3/legacy-custom-pack.txt"
-			test -f "$4/instance.log"
-			for root in "$1" "$2" "$3" "$4"; do
-				unexpected=$(find "$root" -xdev \( -type d -o -type f -o -type l \) \( ! -uid 10001 -o ! -gid 10001 \) -print -quit)
-				test -z "$unexpected" || {
-					printf 'unexpected custom-instance owner: %s\n' "$unexpected" >&2
-					exit 1
-				}
-			done`,
-			"sh",
-			containerCustomRoot,
-			containerConfigsRoot,
-			containerResourcesRoot,
-			containerLogsRoot,
-			legacyWorldName,
-		)
-		return err
-	})
-}
-
-func (s *scenarioState) nestedMountOwnershipIsPreserved() error {
-	if s.candidate == "" {
-		return fmt.Errorf("candidate container is not running")
-	}
-	_, err := s.dockerWithin(
-		10*time.Second,
-		"exec", "--user", "10001:10001", s.candidate,
-		"/bin/sh", "-ceu",
-		`findmnt -n --mountpoint "$2" >/dev/null
-		test "$(stat -c %d "$1")" = "$(stat -c %d "$2")"
-		test "$(stat -c %u:%g "$1")" = 10001:10001
-		test "$(stat -c %u:%g "$1/$3")" = 10001:10001
-		test "$(stat -c %u:%g "$2")" = 0:0
-		test "$(stat -c %u:%g "$2/$4")" = 0:0`,
-		"sh",
-		containerWorldsRoot,
-		containerWorldsRoot+"/"+nestedMountDirectory,
-		nestedParentCanary,
-		nestedMountCanary,
-	)
-	if err != nil {
-		return fmt.Errorf("verify nested mount was pruned from ownership migration: %w", err)
 	}
 	return nil
 }
@@ -781,25 +685,34 @@ func (s *scenarioState) candidateContainerEventuallyHealthy() error {
 	})
 }
 
-func (s *scenarioState) upgradedPersistenceOwnedByMontainer() error {
+// persistenceStillBelongsTo asserts both that the world survived and that its
+// ownership was left exactly as the operator had it. Rewriting a user's data
+// ownership on their behalf is the behaviour this suite exists to prevent.
+func (s *scenarioState) persistenceUnchangedFor(owner string) error {
+	return s.persistenceBelongsTo(owner, owner)
+}
+
+func (s *scenarioState) persistenceBelongsTo(uid, gid string) error {
 	if s.candidate == "" {
 		return fmt.Errorf("candidate container is not running")
 	}
-	return eventually("all upgraded persistence to belong to UID/GID 10001", 30*time.Second, func() error {
+	return eventually("all persistence to belong to UID/GID "+uid+":"+gid, 30*time.Second, func() error {
 		_, err := s.dockerWithin(
 			10*time.Second,
-			"exec", "--user", "10001:10001", s.candidate,
+			"exec", s.candidate,
 			"/bin/sh", "-ceu",
-			`test -s "$1/$5/level.dat"
+			`want_uid=$7
+			want_gid=$8
+			test -s "$1/$5/level.dat"
 			database_file=$(find "$1/$5/db" -type f -size +0c -print -quit)
 			test -n "$database_file"
 			test -f "$1/$5/$6"
 			test -f "$2/server.properties"
 			test -f "$4/instance.log"
 			for root in "$1" "$2" "$3" "$4"; do
-				unexpected=$(find "$root" -xdev \( -type d -o -type f -o -type l \) \( ! -uid 10001 -o ! -gid 10001 \) -print -quit)
+				unexpected=$(find "$root" -xdev \( -type d -o -type f -o -type l \) \( ! -uid "$want_uid" -o ! -gid "$want_gid" \) -print -quit)
 				test -z "$unexpected" || {
-					printf 'unexpected upgraded owner: %s\n' "$unexpected" >&2
+					printf 'unexpected persistence owner: %s\n' "$unexpected" >&2
 					exit 1
 				}
 			done`,
@@ -810,12 +723,20 @@ func (s *scenarioState) upgradedPersistenceOwnedByMontainer() error {
 			containerLogsRoot,
 			legacyWorldName,
 			legacyCanaryName,
+			uid,
+			gid,
 		)
 		return err
 	})
 }
 
-func (s *scenarioState) candidateProcessesRunAsMontainer() error {
+// candidateProcessesRunAsIdentity checks the resolved runtime identity, and for
+// any non-root identity also checks that the privilege drop was complete. A root
+// identity means the data itself is root-owned, which is the pre-v3 layout.
+//
+// Every probe runs as the identity it inspects. Reading /proc/<pid>/environ
+// across a UID boundary needs CAP_SYS_PTRACE, which Docker does not grant.
+func (s *scenarioState) candidateProcessesRunAsIdentity(uid, gid string) error {
 	if s.candidate == "" {
 		return fmt.Errorf("candidate container is not running")
 	}
@@ -835,7 +756,11 @@ func (s *scenarioState) candidateProcessesRunAsMontainer() error {
 	if configured := strings.TrimSpace(s.env["INSTANCE_DIR"]); configured != "" {
 		expectedLibraryPath = configured
 	}
-	return eventually("Montainer and Bedrock to run as UID/GID 10001", 30*time.Second, func() error {
+	hardened := "no"
+	if uid != "0" {
+		hardened = "yes"
+	}
+	return eventually("Montainer and Bedrock to run as "+uid+":"+gid, 30*time.Second, func() error {
 		status, err := s.currentStatus()
 		if err != nil {
 			return err
@@ -853,38 +778,38 @@ func (s *scenarioState) candidateProcessesRunAsMontainer() error {
 		for _, check := range checks {
 			securityState, err := s.dockerWithin(
 				10*time.Second,
-				"exec", "--user", "10001:10001", s.candidate,
+				"exec", "--user", uid+":"+gid, s.candidate,
 				"/bin/sh", "-ceu",
 				`status="/proc/$1/status"
 					test -r "$status"
 					test "$(cat "/proc/$1/comm")" = "$2"
 					tr '\000' '\n' < "/proc/$1/environ" | grep -Fqx "LD_LIBRARY_PATH=$3"
-					awk '
+					awk -v want_uid="$4" -v want_gid="$5" -v hardened="$6" '
 					$1 == "Uid:" {
 						uid_seen=1
-						for (i=2; i<=5; i++) if ($i != 10001) exit 1
+						for (i=2; i<=5; i++) if ($i != want_uid) exit 1
 					}
 					$1 == "Gid:" {
 						gid_seen=1
-						for (i=2; i<=5; i++) if ($i != 10001) exit 1
+						for (i=2; i<=5; i++) if ($i != want_gid) exit 1
 					}
 					$1 == "Groups:" {
 						groups_seen=1
-						for (i=2; i<=NF; i++) if ($i == 0) exit 1
+						if (hardened == "yes") for (i=2; i<=NF; i++) if ($i == 0) exit 1
 					}
 					$1 ~ /^Cap(Inh|Prm|Eff|Bnd|Amb):$/ {
 						capabilities_seen++
-						if ($2 != "0000000000000000") exit 1
+						if (hardened == "yes" && $2 != "0000000000000000") exit 1
 					}
 					$1 == "NoNewPrivs:" {
 						no_new_privs_seen=1
-						if ($2 != 1) exit 1
+						if (hardened == "yes" && $2 != 1) exit 1
 					}
 					END {
 						if (!uid_seen || !gid_seen || !groups_seen || capabilities_seen != 5 || !no_new_privs_seen) exit 1
 						print "secure"
 					}' "$status"`,
-				"sh", strconv.Itoa(check.pid), check.name, expectedLibraryPath,
+				"sh", strconv.Itoa(check.pid), check.name, expectedLibraryPath, uid, gid, hardened,
 			)
 			if err != nil {
 				return fmt.Errorf("inspect %s process %d: %w", check.name, check.pid, err)

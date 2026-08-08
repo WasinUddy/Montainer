@@ -11,6 +11,10 @@ services:
       - montainer_resource_packs:/app/resource_packs
       - montainer_logs:/app/logs
     environment:
+      # Without these, Montainer runs as whoever owns the world data, which for
+      # a brand new Docker volume is root. Set them to keep Bedrock off root.
+      PUID: 10001
+      PGID: 10001
       AWS_S3_ENDPOINT: http://minio:9000
       AWS_S3_KEY_ID: "${MINIO_ROOT_USER:?Set MINIO_ROOT_USER in examples/docker/.env}"
       AWS_S3_SECRET_KEY: "${MINIO_ROOT_PASSWORD:?Set MINIO_ROOT_PASSWORD in examples/docker/.env}"
