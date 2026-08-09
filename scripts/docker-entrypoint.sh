@@ -53,6 +53,30 @@ data_gid=$(stat -c %g -- "$worlds_dir")
 uid=${PUID:-$data_uid}
 gid=${PGID:-$data_gid}
 
+# v3.0.2 changed the top level of every persistence mount to 10001:10001
+# before discovering that it could not migrate data owned by an ordinary host
+# account. That leaves a misleading worlds directory owner while the actual
+# world (including LevelDB) still belongs to the host account. When there is a
+# single unambiguous world-data owner, restore that identity before Montainer
+# starts. Explicit PUID/PGID remain authoritative.
+if [ -z "${PUID:-}" ] && [ -z "${PGID:-}" ] && [ "$data_uid:$data_gid" = "10001:10001" ]; then
+    world_owners=$(find "$worlds_dir" -type f -name level.dat -exec stat -c '%u:%g' {} + 2>/dev/null | sort -u)
+    case "$world_owners" in
+        '') ;;
+        *'
+'*) warn "v3.0.2 ownership repair skipped: world data has multiple owners; set PUID and PGID explicitly" ;;
+        *)
+            world_uid=${world_owners%:*}
+            world_gid=${world_owners#*:}
+            if [ "$world_uid:$world_gid" != "10001:10001" ]; then
+                uid=$world_uid
+                gid=$world_gid
+                warn "detected a partial v3.0.2 ownership migration; restoring runtime identity from world data as $uid:$gid"
+            fi
+            ;;
+    esac
+fi
+
 printf 'montainer-entrypoint: running Montainer and Bedrock as %s:%s\n' "$uid" "$gid"
 
 if [ "$uid" -eq 0 ] && [ "$gid" -eq 0 ]; then
@@ -80,7 +104,7 @@ align "$uid:$gid" "$worlds_dir" "$configs_dir" "$resources_dir" "$logs_dir"
 # Reached only when PUID/PGID name an identity the data does not already use.
 # Asking for a specific identity is a request to make it work, so this is the
 # one case where rewriting existing data is what the operator actually wants.
-if [ "$uid" != "$data_uid" ] || [ "$gid" != "$data_gid" ]; then
+if { [ -n "${PUID:-}" ] || [ -n "${PGID:-}" ]; } && { [ "$uid" != "$data_uid" ] || [ "$gid" != "$data_gid" ]; }; then
     align -R "$uid:$gid" "$worlds_dir" "$configs_dir" "$resources_dir" "$logs_dir"
 fi
 

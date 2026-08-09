@@ -160,6 +160,8 @@ services:
 
 Naming an identity that the data does not already use is treated as a request to make that identity work, so the persistence roots are recursively re-owned once to match. This is the only case in which Montainer changes the ownership of your data. Choosing the identity that the data already has, or omitting both variables, never triggers it.
 
+The entrypoint also recognizes a failed v3.0.2 migration: that release could change the top-level `worlds` directory to `10001:10001` while leaving a host-owned world beneath it inaccessible. If no `PUID` or `PGID` is set and every discovered `level.dat` has one non-`10001` owner, startup restores that owner at the persistence-root level and runs under it. If worlds have different owners, set `PUID` and `PGID` explicitly.
+
 Two directory groups are treated differently on every start, whichever way the identity was resolved. `INSTANCE_DIR` holds image content — the Bedrock binary and its shared libraries — and is re-owned recursively so the runtime identity can execute it; the world directory below it is skipped. The four persistence roots are only re-owned at their top level, which is what a freshly created Docker volume needs, leaving the data inside them alone. Ownership changes are best-effort: storage that refuses `chown` while still granting access, such as root-squashed NFS or SMB, logs a warning and starts anyway.
 
 Custom `INSTANCE_DIR`, `CONFIG_DIR`, `RESOURCE_PACKS_DIR`, and `LOG_DIR` values are honored; point each at a distinct, dedicated data directory.
