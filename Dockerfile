@@ -61,8 +61,11 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
+# The runtime UID is resolved at boot and may be any value, so the scratch home
+# the AWS SDK reads for shared config has to be usable by all of them.
 RUN mkdir -p /app/instance/worlds /app/configs /app/resource_packs /app/logs /app/dist \
-    && chown -R montainer:montainer /app /home/montainer
+    && chown -R montainer:montainer /app /home/montainer \
+    && chmod 1777 /home/montainer
 
 COPY --from=bedrock --chown=montainer:montainer /out/ /app/instance/
 COPY --from=frontend --chown=montainer:montainer /src/web/dist/ /app/dist/
@@ -77,16 +80,18 @@ ENV LISTEN_ADDR=:8000 \
     CONFIG_DIR=/app/configs \
     RESOURCE_PACKS_DIR=/app/resource_packs \
     LOG_DIR=/app/logs \
-    STATIC_DIR=/app/dist
+    STATIC_DIR=/app/dist \
+    HOME=/home/montainer
 
-# The entrypoint repairs pre-v3 root-owned mounts, drops every capability, and
-# execs Montainer as UID/GID 10001 before the application or Bedrock starts.
+# Starting as root lets the entrypoint adopt the identity that already owns the
+# world data. Setting `user:` on the container skips that and is respected.
 USER root
 
 EXPOSE 8000 19132/udp 19133/udp
 VOLUME ["/app/instance/worlds", "/app/configs", "/app/resource_packs", "/app/logs"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --retries=3 \
-    CMD ["/usr/local/bin/montainer-entrypoint", "__healthcheck"]
+    CMD curl --fail --silent --show-error --connect-timeout 2 --max-time 4 \
+        --output /dev/null http://127.0.0.1:8000/healthz || exit 1
 
 ENTRYPOINT ["/usr/local/bin/montainer-entrypoint"]
