@@ -66,9 +66,9 @@ The feature-level `@otel` tag still selects all three OTLP scenarios for a combi
 
 Each scenario owns unique container names, an isolated Docker network, isolated persistence, writable non-root configuration, and dynamic host ports. The upgrade shard labels and explicitly removes every legacy, restore-verification, and custom-instance named volume after all containers are gone; other shards use anonymous volumes. Failed scenarios print Montainer, Collector, MinIO, and virtual-client logs before cleanup.
 
-The full client uses a separately pinned gophertunnel module under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. CI makes this a stable-image gate. Preview images always require RakNet discovery but omit the full join when the pinned test client has not yet added Mojang's preview protocol; this avoids mistaking a stale client library for a broken server image.
+The full client uses gophertunnel under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. The client uses gophertunnel's `minecraft.DefaultProtocol`, including its packet codecs; the client/upgrade CI shards refresh gophertunnel to `@latest` immediately before building the probe so the protocol support follows the current Bedrock release without hardcoding a protocol ID. Preview images always require RakNet discovery but omit the full join when the current client library does not yet support Mojang's preview protocol.
 
-Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and downloaded backup diagnostics. Auxiliary image references can be overridden with `MONTAINER_OTEL_COLLECTOR_IMAGE` and `MONTAINER_MINIO_IMAGE`.
+Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and downloaded backup diagnostics. The default MinIO image is `quay.io/minio/minio:latest`; auxiliary image references can be overridden with `MONTAINER_OTEL_COLLECTOR_IMAGE` and `MONTAINER_MINIO_IMAGE`.
 
 ## CI release topology
 
