@@ -172,6 +172,16 @@ jobs:
             exit 1
           fi
 
+      - name: Refresh Bedrock client protocol support
+        if: ${{ contains(env.GODOG_TAGS, '@client') || contains(env.GODOG_TAGS, '@upgrade') }}
+        working-directory: test/fixtures/bedrockclient
+        shell: bash
+        run: |
+          set -euo pipefail
+          go get github.com/sandertv/gophertunnel@latest
+          go mod tidy
+          printf 'Using gophertunnel %s\n' "$(go list -m -f '{{.Version}}' github.com/sandertv/gophertunnel)"
+
       - name: Run ${{ matrix.suite }} real-image acceptance scenarios
         run: go test -v -count=1 ./acceptance/realimage
 

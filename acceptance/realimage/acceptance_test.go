@@ -16,7 +16,7 @@ const (
 	acceptanceImageEnv    = "MONTAINER_ACCEPTANCE_IMAGE"
 	expectedVersionEnv    = "MONTAINER_EXPECTED_BEDROCK_VERSION"
 	defaultCollectorImage = "otel/opentelemetry-collector-contrib:0.156.0@sha256:125bdbeb7590cc1952c5b3430ecf14063568980c2c93d5b38676cc0446ed8108"
-	defaultMinIOImage     = "minio/minio@sha256:14cea493d9a34af32f524e538b8346cf79f3321eff8e708c1e2960462bd8936e"
+	defaultMinIOImage     = "quay.io/minio/minio:latest"
 	defaultLegacyImage    = "ghcr.io/wasinuddy/montainer-stable:1.26.33.1@sha256:e8cafa80a9ec6cd226eb9ea66f3177fd7925b56bee0bfc75556d8c0c3305f965"
 )
 
