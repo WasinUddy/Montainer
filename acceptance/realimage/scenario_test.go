@@ -45,16 +45,16 @@ type scenarioState struct {
 	volumes     []string
 	candidate   string
 	collector   string
-	minio       string
+	rustfs      string
 	client      string
 	baseURL     string
 	udpAddress  string
 	env         map[string]string
 	httpClient  *http.Client
 
-	minioEndpoint string
-	minioBucket   string
-	minioClient   *s3.Client
+	rustfsEndpoint string
+	rustfsBucket   string
+	rustfsClient   *s3.Client
 
 	initialGeneration uint64
 	concurrentResults []requestResult
@@ -74,7 +74,7 @@ func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^a real OpenTelemetry Collector is available$`, s.startCollector)
 	ctx.Step(`^the configured OpenTelemetry Collector is unavailable$`, s.configureUnavailableCollector)
 	ctx.Step(`^log export batching is delayed until shutdown$`, s.delayOTelUntilShutdown)
-	ctx.Step(`^S3-compatible MinIO storage is available$`, s.startMinIO)
+	ctx.Step(`^S3-compatible RustFS storage is available$`, s.startRustFS)
 	ctx.Step(`^a genuine root-owned legacy world exists on named volumes$`, s.seedRootOwnedLegacyWorld)
 	ctx.Step(`^a genuine legacy world owned by UID and GID (\d+) exists on named volumes$`, s.seedLegacyWorldOwnedBy)
 	ctx.Step(`^a root-owned custom pre-v3 Bedrock instance exists$`, s.rootOwnedCustomInstanceExists)
@@ -150,14 +150,14 @@ func (s *scenarioState) prepare() error {
 	s.volumes = nil
 	s.candidate = ""
 	s.collector = ""
-	s.minio = ""
+	s.rustfs = ""
 	s.client = ""
 	s.baseURL = ""
 	s.udpAddress = ""
 	s.httpClient = &http.Client{Timeout: 90 * time.Second}
-	s.minioEndpoint = ""
-	s.minioBucket = "montainer-real-image"
-	s.minioClient = nil
+	s.rustfsEndpoint = ""
+	s.rustfsBucket = "montainer-real-image"
+	s.rustfsClient = nil
 	s.initialGeneration = 0
 	s.concurrentResults = nil
 	s.lastBackup = backupResult{}

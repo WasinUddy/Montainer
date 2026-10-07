@@ -388,13 +388,13 @@ func (s *scenarioState) downloadedBackupZIP() (*zip.Reader, error) {
 }
 
 func (s *scenarioState) downloadedBackupBytes() ([]byte, error) {
-	if s.minioClient == nil {
-		return nil, fmt.Errorf("MinIO client is not configured")
+	if s.rustfsClient == nil {
+		return nil, fmt.Errorf("RustFS S3 client is not configured")
 	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
-	response, err := s.minioClient.GetObject(ctx, &s3.GetObjectInput{
-		Bucket: aws.String(s.minioBucket),
+	response, err := s.rustfsClient.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.rustfsBucket),
 		Key:    aws.String(s.lastBackup.Key),
 	})
 	if err != nil {

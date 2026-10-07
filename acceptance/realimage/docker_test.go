@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	minioAccessKey         = "montainer-access"
-	minioSecretKey         = "montainer-secret-acceptance"
+	rustfsAccessKey        = "montainer-access"
+	rustfsSecretKey        = "montainer-secret-acceptance"
 	legacyWorldName        = "acceptance-world"
 	legacyObjectiveName    = "legacy_probe"
 	legacyPlayerName       = "LegacyMarker"
@@ -119,12 +119,12 @@ func (s *scenarioState) delayOTelUntilShutdown() error {
 	return nil
 }
 
-func (s *scenarioState) startMinIO() error {
+func (s *scenarioState) startRustFS() error {
 	if s.candidate != "" {
-		return fmt.Errorf("MinIO must be configured before the candidate starts")
+		return fmt.Errorf("RustFS must be configured before the candidate starts")
 	}
-	name := strings.Replace(s.networkName, "montainer-real-", "montainer-minio-", 1)
-	s.minio = name
+	name := strings.Replace(s.networkName, "montainer-real-", "montainer-rustfs-", 1)
+	s.rustfs = name
 	s.containers = append(s.containers, name)
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
 	defer cancel()
@@ -134,10 +134,9 @@ func (s *scenarioState) startMinIO() error {
 		"--name", name,
 		"--network", s.networkName,
 		"--publish", "127.0.0.1::9000/tcp",
-		"--env", "MINIO_ROOT_USER="+minioAccessKey,
-		"--env", "MINIO_ROOT_PASSWORD="+minioSecretKey,
-		s.suite.minioImage,
-		"server", "/data", "--console-address", ":9001",
+		"--env", "RUSTFS_ACCESS_KEY="+rustfsAccessKey,
+		"--env", "RUSTFS_SECRET_KEY="+rustfsSecretKey,
+		s.suite.rustfsImage,
 	); err != nil {
 		return err
 	}
@@ -145,9 +144,9 @@ func (s *scenarioState) startMinIO() error {
 	if err != nil {
 		return err
 	}
-	s.minioEndpoint = "http://" + address
-	if err := eventually("MinIO to become ready", 60*time.Second, func() error {
-		request, err := http.NewRequest(http.MethodGet, s.minioEndpoint+"/minio/health/ready", nil)
+	s.rustfsEndpoint = "http://" + address
+	if err := eventually("RustFS to become ready", 60*time.Second, func() error {
+		request, err := http.NewRequest(http.MethodGet, s.rustfsEndpoint+"/health/ready", nil)
 		if err != nil {
 			return err
 		}
@@ -157,7 +156,7 @@ func (s *scenarioState) startMinIO() error {
 		}
 		defer response.Body.Close()
 		if response.StatusCode != http.StatusOK {
-			return fmt.Errorf("MinIO readiness returned %d", response.StatusCode)
+			return fmt.Errorf("RustFS readiness returned %d", response.StatusCode)
 		}
 		return nil
 	}); err != nil {
@@ -167,23 +166,23 @@ func (s *scenarioState) startMinIO() error {
 	awsConfig, err := awsconfig.LoadDefaultConfig(
 		ctx,
 		awsconfig.WithRegion("us-east-1"),
-		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(minioAccessKey, minioSecretKey, "")),
+		awsconfig.WithCredentialsProvider(credentials.NewStaticCredentialsProvider(rustfsAccessKey, rustfsSecretKey, "")),
 	)
 	if err != nil {
-		return fmt.Errorf("configure MinIO client: %w", err)
+		return fmt.Errorf("configure RustFS S3 client: %w", err)
 	}
-	s.minioClient = s3.NewFromConfig(awsConfig, func(options *s3.Options) {
-		options.BaseEndpoint = aws.String(s.minioEndpoint)
+	s.rustfsClient = s3.NewFromConfig(awsConfig, func(options *s3.Options) {
+		options.BaseEndpoint = aws.String(s.rustfsEndpoint)
 		options.UsePathStyle = true
 	})
-	if _, err := s.minioClient.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(s.minioBucket)}); err != nil {
-		return fmt.Errorf("create MinIO acceptance bucket: %w", err)
+	if _, err := s.rustfsClient.CreateBucket(ctx, &s3.CreateBucketInput{Bucket: aws.String(s.rustfsBucket)}); err != nil {
+		return fmt.Errorf("create RustFS acceptance bucket: %w", err)
 	}
 
 	s.env["AWS_S3_ENDPOINT"] = "http://" + name + ":9000"
-	s.env["AWS_S3_KEY_ID"] = minioAccessKey
-	s.env["AWS_S3_SECRET_KEY"] = minioSecretKey
-	s.env["AWS_S3_BUCKET_NAME"] = s.minioBucket
+	s.env["AWS_S3_KEY_ID"] = rustfsAccessKey
+	s.env["AWS_S3_SECRET_KEY"] = rustfsSecretKey
+	s.env["AWS_S3_BUCKET_NAME"] = s.rustfsBucket
 	s.env["AWS_S3_REGION"] = "us-east-1"
 	return nil
 }

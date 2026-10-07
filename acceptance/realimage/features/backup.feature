@@ -4,9 +4,9 @@ Feature: Back up a real Bedrock world to S3-compatible storage
   I want the packaged server to survive a consistent backup cycle
   So that Mojang lifecycle changes cannot silently break world protection
 
-  Scenario: Concurrent backup requests create one valid MinIO archive
+  Scenario: Concurrent backup requests create one valid RustFS archive
     Given the candidate Montainer image is available
-    And S3-compatible MinIO storage is available
+    And S3-compatible RustFS storage is available
     When I start the candidate with the packaged Bedrock server
     Then a RakNet client can eventually discover the Bedrock server
     When I request 4 backups concurrently
