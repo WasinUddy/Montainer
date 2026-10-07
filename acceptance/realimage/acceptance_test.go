@@ -16,7 +16,7 @@ const (
 	acceptanceImageEnv    = "MONTAINER_ACCEPTANCE_IMAGE"
 	expectedVersionEnv    = "MONTAINER_EXPECTED_BEDROCK_VERSION"
 	defaultCollectorImage = "otel/opentelemetry-collector-contrib:0.156.0@sha256:125bdbeb7590cc1952c5b3430ecf14063568980c2c93d5b38676cc0446ed8108"
-	defaultMinIOImage     = "quay.io/minio/minio:latest"
+	defaultRustFSImage    = "rustfs/rustfs:1.0.1@sha256:1803faef57627e2d9c2e7d89d655d712ddded5389040054987163043fecb6a3c"
 	defaultLegacyImage    = "ghcr.io/wasinuddy/montainer-stable:1.26.33.1@sha256:e8cafa80a9ec6cd226eb9ea66f3177fd7925b56bee0bfc75556d8c0c3305f965"
 )
 
@@ -25,7 +25,7 @@ type suiteHarness struct {
 	image           string
 	expectedVersion string
 	collectorImage  string
-	minioImage      string
+	rustfsImage     string
 	legacyImage     string
 	probeBinary     string
 	clientBinary    string
@@ -58,7 +58,7 @@ func TestRealImageAcceptance(t *testing.T) {
 		image:           image,
 		expectedVersion: expectedVersion,
 		collectorImage:  envOrDefault("MONTAINER_OTEL_COLLECTOR_IMAGE", defaultCollectorImage),
-		minioImage:      envOrDefault("MONTAINER_MINIO_IMAGE", defaultMinIOImage),
+		rustfsImage:     envOrDefault("MONTAINER_RUSTFS_IMAGE", defaultRustFSImage),
 		legacyImage:     envOrDefault("MONTAINER_LEGACY_IMAGE", defaultLegacyImage),
 	}
 	tags := os.Getenv("GODOG_TAGS")
@@ -110,7 +110,7 @@ func (h *suiteHarness) validate() error {
 		"candidate image":          h.image,
 		"expected Bedrock version": h.expectedVersion,
 		"Collector image":          h.collectorImage,
-		"MinIO image":              h.minioImage,
+		"RustFS image":             h.rustfsImage,
 		"pre-v3 legacy image":      h.legacyImage,
 		"RakNet probe":             h.probeBinary,
 	} {

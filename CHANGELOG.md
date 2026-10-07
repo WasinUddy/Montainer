@@ -2,6 +2,7 @@
 
 ## [Unreleased]
 ### Fixed
+- Real-image `@backup` and `@upgrade` acceptance now start digest-pinned RustFS instead of `quay.io/minio/minio:latest`, which GitHub Actions runners can no longer pull.
 - Resolve the runtime identity from the ownership of the world data instead of requiring UID/GID `10001`, so a pre-v3 root-owned volume and a bind mount owned by an ordinary host account both start without intervention.
 - Stop rewriting the ownership of existing world, configuration, resource-pack, and log data. Only `INSTANCE_DIR` image content and the top level of each persistence root are re-owned, and ownership changes that storage refuses now warn and continue instead of aborting the boot.
 - Accept `PUID` and `PGID` to select an identity explicitly, recursively re-owning the persistence roots once when the chosen identity differs from the data's.

@@ -6,7 +6,7 @@ Feature: Run an existing Bedrock world under any ownership
 
   Scenario: A root-owned world remains playable and backup-safe after upgrade
     Given the candidate Montainer image is available
-    And S3-compatible MinIO storage is available
+    And S3-compatible RustFS storage is available
     And a genuine root-owned legacy world exists on named volumes
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy

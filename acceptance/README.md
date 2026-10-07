@@ -3,7 +3,7 @@
 Montainer has two complementary black-box Godog suites:
 
 - `./acceptance` launches the real Montainer binary against a deterministic fake Bedrock process. It is fast and can force crashes, delays, stderr output, client cancellation, and Collector outages.
-- `./acceptance/realimage` launches an already-built Docker image with the packaged Mojang Bedrock binary. It validates the release artifact, native runtime libraries, real process behavior, OTLP Collector integration, MinIO backups, UDP discovery, and client compatibility.
+- `./acceptance/realimage` launches an already-built Docker image with the packaged Mojang Bedrock binary. It validates the release artifact, native runtime libraries, real process behavior, OTLP Collector integration, RustFS backups, UDP discovery, and client compatibility.
 
 ## Fast fake-Bedrock suite
 
@@ -56,19 +56,19 @@ Available real-image tags are:
 - `@otel-export`: export through the pinned real Collector;
 - `@otel-outage`: unavailable-Collector isolation;
 - `@otel-flush`: graceful-shutdown export flushing;
-- `@backup`: four concurrent saves, MinIO object verification, ZIP integrity, one restart, and gameplay recovery;
+- `@backup`: four concurrent saves, RustFS object verification, ZIP integrity, one restart, and gameplay recovery;
 - `@client`: offline virtual-player spawn, authoritative `list` output, and receipt of a teleport movement packet; and
-- `@upgrade` (stable only): scenarios covering a genuine root-owned world and scoreboard marker created by the digest-pinned pre-v3 image, a virtual player joining and moving in that world, external restoration of its downloaded MinIO ZIP into fresh volumes where the same score must load, the same world reassigned to an ordinary host UID, a `PUID`/`PGID` override, a root-owned custom `INSTANCE_DIR`, and explicit non-root startup with a working unprivileged health probe. Every scenario asserts that persistence ownership is left exactly as it was found, and Montainer PID 1 and its Bedrock child are checked for UID; any non-root identity is additionally checked for capabilities and `no_new_privs`.
+- `@upgrade` (stable only): scenarios covering a genuine root-owned world and scoreboard marker created by the digest-pinned pre-v3 image, a virtual player joining and moving in that world, external restoration of its downloaded RustFS ZIP into fresh volumes where the same score must load, the same world reassigned to an ordinary host UID, a `PUID`/`PGID` override, a root-owned custom `INSTANCE_DIR`, and explicit non-root startup with a working unprivileged health probe. Every scenario asserts that persistence ownership is left exactly as it was found, and Montainer PID 1 and its Bedrock child are checked for UID; any non-root identity is additionally checked for capabilities and `no_new_privs`.
 
 The feature-level `@otel` tag still selects all three OTLP scenarios for a combined local run; CI uses the individual tags so they execute concurrently.
 
 `MONTAINER_LEGACY_IMAGE` can override the pinned pre-v3 fixture for local investigation. CI leaves it at the immutable `1.26.33.1` digest so the upgrade contract cannot move with a tag.
 
-Each scenario owns unique container names, an isolated Docker network, isolated persistence, writable non-root configuration, and dynamic host ports. The upgrade shard labels and explicitly removes every legacy, restore-verification, and custom-instance named volume after all containers are gone; other shards use anonymous volumes. Failed scenarios print Montainer, Collector, MinIO, and virtual-client logs before cleanup.
+Each scenario owns unique container names, an isolated Docker network, isolated persistence, writable non-root configuration, and dynamic host ports. The upgrade shard labels and explicitly removes every legacy, restore-verification, and custom-instance named volume after all containers are gone; other shards use anonymous volumes. Failed scenarios print Montainer, Collector, RustFS, and virtual-client logs before cleanup.
 
 The full client uses gophertunnel under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. The client uses gophertunnel's `minecraft.DefaultProtocol`, including its packet codecs; the client/upgrade CI shards refresh gophertunnel to `@latest` immediately before building the probe so the protocol support follows the current Bedrock release without hardcoding a protocol ID. Preview images always require RakNet discovery but omit the full join when the current client library does not yet support Mojang's preview protocol.
 
-Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and downloaded backup diagnostics. The default MinIO image is `quay.io/minio/minio:latest`; auxiliary image references can be overridden with `MONTAINER_OTEL_COLLECTOR_IMAGE` and `MONTAINER_MINIO_IMAGE`.
+Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and downloaded backup diagnostics. The default RustFS image is digest-pinned `rustfs/rustfs:1.0.1`; auxiliary image references can be overridden with `MONTAINER_OTEL_COLLECTOR_IMAGE` and `MONTAINER_RUSTFS_IMAGE`.
 
 ## CI release topology
 
