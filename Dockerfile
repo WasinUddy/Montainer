@@ -87,7 +87,7 @@ ENV LISTEN_ADDR=:8000 \
 # world data. Setting `user:` on the container skips that and is respected.
 USER root
 
-EXPOSE 8000 19132/udp 19133/udp
+EXPOSE 8000 19132/tcp 19132/udp
 VOLUME ["/app/instance/worlds", "/app/configs", "/app/resource_packs", "/app/logs"]
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=5m --retries=3 \

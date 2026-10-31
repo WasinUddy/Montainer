@@ -178,7 +178,8 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          go get github.com/sandertv/gophertunnel@latest
+          # Preserve the pinned offline NetherNet fix until a newer release exists.
+          go get github.com/sandertv/gophertunnel@upgrade
           go mod tidy
           printf 'Using gophertunnel %s\n' "$(go list -m -f '{{.Version}}' github.com/sandertv/gophertunnel)"
 

@@ -7,7 +7,7 @@ Feature: Join the packaged server with a virtual Bedrock player
   Scenario: An offline player joins and receives the requested teleport
     Given the candidate Montainer image is available
     When I start the candidate with the packaged Bedrock server
-    Then a RakNet client can eventually discover the Bedrock server
+    Then a NetherNet client can eventually discover the Bedrock server
     When the virtual Bedrock player joins
     Then the local logs eventually contain "Player connected"
     When I send the real server command "list"

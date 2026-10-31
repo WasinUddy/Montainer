@@ -3,7 +3,7 @@
 Montainer has two complementary black-box Godog suites:
 
 - `./acceptance` launches the real Montainer binary against a deterministic fake Bedrock process. It is fast and can force crashes, delays, stderr output, client cancellation, and Collector outages.
-- `./acceptance/realimage` launches an already-built Docker image with the packaged Mojang Bedrock binary. It validates the release artifact, native runtime libraries, real process behavior, OTLP Collector integration, RustFS backups, UDP discovery, and client compatibility.
+- `./acceptance/realimage` launches an already-built Docker image with the packaged Mojang Bedrock binary. It validates the release artifact, native runtime libraries, real process behavior, OTLP Collector integration, RustFS backups, NetherNet HTTP discovery, and client compatibility.
 
 ## Fast fake-Bedrock suite
 
@@ -51,7 +51,7 @@ Each channel is pinned by its files under `versions/`: the scraped version, exac
 
 Available real-image tags are:
 
-- `@smoke`: exact Mojang version, management health, real command I/O, and RakNet discovery;
+- `@smoke`: exact Mojang version, management health, real command I/O, and NetherNet HTTP discovery;
 - `@lifecycle`: eight concurrent stops and starts, conflict semantics, generation count, and gameplay recovery;
 - `@otel-export`: export through the pinned real Collector;
 - `@otel-outage`: unavailable-Collector isolation;
@@ -66,7 +66,11 @@ The feature-level `@otel` tag still selects all three OTLP scenarios for a combi
 
 Each scenario owns unique container names, an isolated Docker network, isolated persistence, writable non-root configuration, and dynamic host ports. The upgrade shard labels and explicitly removes every legacy, restore-verification, and custom-instance named volume after all containers are gone; other shards use anonymous volumes. Failed scenarios print Montainer, Collector, RustFS, and virtual-client logs before cleanup.
 
-The full client uses gophertunnel under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. The client uses gophertunnel's `minecraft.DefaultProtocol`, including its packet codecs; the client/upgrade CI shards refresh gophertunnel to `@latest` immediately before building the probe so the protocol support follows the current Bedrock release without hardcoding a protocol ID. Preview images always require RakNet discovery but omit the full join when the current client library does not yet support Mojang's preview protocol.
+The full client uses gophertunnel under `test/fixtures/bedrockclient`. It intentionally uses no Microsoft/Xbox credentials and only connects to an isolated server configured with `online-mode=false`. The client uses gophertunnel's `minecraft.DefaultProtocol`, including its packet codecs; the client/upgrade CI shards upgrade gophertunnel with `@upgrade` (which preserves the pinned offline NetherNet fix until a newer release is available) immediately before building the probe so the protocol support follows the current Bedrock release without hardcoding a protocol ID. The client discovers `/v1/join` over HTTP, then joins using NetherNet/WebRTC with a locally generated, self-signed transport identity. No external identity service is needed. Preview images require a valid NetherNet status response but omit the full join when the current client library does not yet support Mojang's preview protocol.
+
+Acceptance fixtures explicitly set `transport=nethernet` and `server-udp-ports=19132`. The signaling TCP port is published dynamically on loopback and the discovery check runs through that mapping. The virtual player runs inside the isolated Docker network, where negotiated UDP candidates are directly reachable. The pinned pre-v3 world-seeding image and the custom-instance scenario that deliberately preserves its old binary retain RakNet checks. The world-seeding configuration switches to NetherNet before the current packaged binary adopts that world.
+
+The probe pins go-nethernet `v1.0.26` for [client identity key encoding](https://github.com/df-mc/go-nethernet/commit/fda14c119937919d850d08b4202845d5952cc86b) and Gophertunnel commit [`25acc41`](https://github.com/Sandertv/gophertunnel/commit/25acc41eb24af21cfebf27ffa5ace37069838eb3) so the offline WebRTC assertion and game login share a key. Older versions either reject the offer or disconnect during login.
 
 Set `MONTAINER_ACCEPTANCE_KEEP_TMP=1` to preserve per-scenario configuration and downloaded backup diagnostics. The default RustFS image is digest-pinned `rustfs/rustfs:1.0.1`; auxiliary image references can be overridden with `MONTAINER_OTEL_COLLECTOR_IMAGE` and `MONTAINER_RUSTFS_IMAGE`.
 
