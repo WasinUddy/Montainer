@@ -71,7 +71,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a NetherNet client can eventually discover the Bedrock server
+    And the custom pre-v3 server responds to RakNet discovery
     And Montainer PID 1 and Bedrock run as UID 0 and GID 0
     And the candidate reports no filesystem permission errors
 

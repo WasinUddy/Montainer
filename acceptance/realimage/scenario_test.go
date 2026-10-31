@@ -88,6 +88,7 @@ func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the local logs contain the expected Bedrock version$`, s.logsContainExpectedVersion)
 	ctx.Step(`^a NetherNet client can discover the Bedrock server$`, s.netherNetEventuallyResponds)
 	ctx.Step(`^a NetherNet client can eventually discover the Bedrock server$`, s.netherNetEventuallyResponds)
+	ctx.Step(`^the custom pre-v3 server responds to RakNet discovery$`, s.rakNetEventuallyResponds)
 	ctx.Step(`^I send the real server command "([^"]*)"$`, s.sendCommand)
 	ctx.Step(`^the local logs eventually contain "([^"]*)"$`, s.logsEventuallyContain)
 	ctx.Step(`^I request (\d+) stops concurrently$`, s.requestStopsConcurrently)

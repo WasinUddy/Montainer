@@ -15,8 +15,8 @@ type bedrockAdvertisement struct {
 	Raw      string
 }
 
-// The digest-pinned pre-v3 world-seeding image still speaks RakNet. Current
-// candidates must use netherNetEventuallyResponds instead.
+// The pre-v3 world-seeding and custom-instance fixtures still speak RakNet.
+// Packaged current binaries must use netherNetEventuallyResponds instead.
 func (s *scenarioState) rakNetEventuallyResponds() error {
 	return eventually("RakNet discovery response from packaged Bedrock", realImageTimeout, func() error {
 		advertisement, err := s.pingBedrockInNetwork()

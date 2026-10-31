@@ -348,6 +348,8 @@ func (s *scenarioState) rootOwnedCustomInstanceExists() error {
 		for file in server.properties allowlist.json permissions.json; do
 			cp "/tmp/montainer-config-fixtures/$file" "$2/$file"
 		done
+		# This scenario deliberately keeps the operator's pre-v3 binary.
+		sed -i 's/^transport=.*/transport=raknet/' "$2/server.properties"
 		printf 'legacy custom resource fixture\n' > "$3/legacy-custom-pack.txt"
 		printf 'legacy custom log fixture\n' > "$4/legacy-custom.log"
 		chown -R 0:0 "$1" "$2" "$3" "$4"`,
