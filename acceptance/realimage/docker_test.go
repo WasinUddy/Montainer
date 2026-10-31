@@ -244,6 +244,7 @@ func (s *scenarioState) seedLegacyWorldOwnedBy(owner string) error {
 			cp "/tmp/montainer-config-fixtures/$file" "/app/configs/$file"
 			chown 0:0 "/app/configs/$file"
 		done
+		sed -i 's/^transport=.*/transport=raknet/' /app/configs/server.properties
 		printf 'legacy resource pack fixture\n' > /app/resource_packs/legacy-pack.txt
 		printf 'legacy log fixture\n' > /app/logs/legacy.log
 		chown 0:0 /app/resource_packs/legacy-pack.txt /app/logs/legacy.log`,
@@ -283,6 +284,18 @@ func (s *scenarioState) seedLegacyWorldOwnedBy(owner string) error {
 	if err := s.stopLegacyServerAndContainer(); err != nil {
 		return err
 	}
+	// The pinned legacy binary still uses RakNet. Switch only the isolated test
+	// configuration before the current candidate adopts the persisted world.
+	if _, err := s.dockerWithin(
+		30*time.Second,
+		"run", "--rm", "--platform", "linux/amd64",
+		"--user", "0:0", "--entrypoint", "/bin/sh",
+		"--volume", configVolume+":"+containerConfigsRoot,
+		s.suite.legacyImage,
+		"-ceu", "sed -i 's/^transport=.*/transport=nethernet/' /app/configs/server.properties",
+	); err != nil {
+		return fmt.Errorf("configure NetherNet for upgraded candidate: %w", err)
+	}
 	if err := s.createLegacyCanaryAndVerifyOwnership(owner); err != nil {
 		return err
 	}
@@ -292,7 +305,7 @@ func (s *scenarioState) seedLegacyWorldOwnedBy(owner string) error {
 	// process, is what the scenario actually exercises.
 	s.candidate = ""
 	s.baseURL = ""
-	s.udpAddress = ""
+	s.signalingURL = ""
 	return nil
 }
 
@@ -513,7 +526,7 @@ func (s *scenarioState) startCandidateContainer(name, image string) error {
 		"--network", s.networkName,
 		"--add-host", "host.docker.internal:host-gateway",
 		"--publish", "127.0.0.1::8000/tcp",
-		"--publish", "127.0.0.1::19132/udp",
+		"--publish", "127.0.0.1::19132/tcp",
 	}
 	if s.explicitNonRoot {
 		arguments = append(
@@ -549,12 +562,12 @@ func (s *scenarioState) startCandidateContainer(name, image string) error {
 	if err != nil {
 		return err
 	}
-	udpAddress, err := s.publishedAddress(ctx, name, "19132/udp")
+	signalingAddress, err := s.publishedAddress(ctx, name, "19132/tcp")
 	if err != nil {
 		return err
 	}
 	s.baseURL = "http://" + httpAddress
-	s.udpAddress = udpAddress
+	s.signalingURL = "http://" + signalingAddress
 	return nil
 }
 
@@ -657,7 +670,7 @@ with zipfile.ZipFile(archive_path) as archive:
 	s.legacyMounts = restoredMounts
 	s.candidate = ""
 	s.baseURL = ""
-	s.udpAddress = ""
+	s.signalingURL = ""
 	restoredName := strings.Replace(s.networkName, "montainer-real-", "montainer-restored-", 1)
 	if err := s.startCandidateContainer(restoredName, s.suite.image); err != nil {
 		return fmt.Errorf("start candidate from restored backup: %w", err)
@@ -865,6 +878,7 @@ func (s *scenarioState) startVirtualClient() error {
 	if _, err := s.docker(
 		ctx,
 		"run", "--detach",
+		"--platform", "linux/amd64",
 		"--name", name,
 		"--network", s.networkName,
 		"--user", "10001:10001",
@@ -873,7 +887,7 @@ func (s *scenarioState) startVirtualClient() error {
 		"--entrypoint", "/tmp/bedrock-client",
 		"--volume", s.suite.clientBinary+":/tmp/bedrock-client:ro",
 		s.suite.image,
-		"--address", s.candidate+":19132",
+		"--address", "http://"+s.candidate+":19132",
 		"--username", "MontainerCI",
 		"--wait-teleport",
 		"--expect-x", "12000",

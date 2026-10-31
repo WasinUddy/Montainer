@@ -3,8 +3,8 @@ services:
     image: ghcr.io/wasinuddy/montainer-stable:latest # Use 'montainer-preview' for Snapshot server
     ports:
       - "127.0.0.1:8000:8000" # Web UI console; keep the unauthenticated API local
-      - "19132:19132/udp"     # Minecraft Bedrock server port
-      - "19133:19133/udp"     # Minecraft Bedrock IPv6 port
+      - "19132:19132/tcp"     # NetherNet HTTP signaling
+      - "19132:19132/udp"     # NetherNet WebRTC gameplay
     volumes:
       - montainer_worlds:/app/instance/worlds
       - montainer_configs:/app/configs

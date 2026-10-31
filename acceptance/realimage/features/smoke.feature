@@ -10,6 +10,6 @@ Feature: Boot the packaged Mojang Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
     And the local logs contain the expected Bedrock version
-    And a RakNet client can discover the Bedrock server
+    And a NetherNet client can discover the Bedrock server
     When I send the real server command "real-image-smoke-token"
     Then the local logs eventually contain "real-image-smoke-token"

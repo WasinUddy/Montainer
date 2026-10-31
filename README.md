@@ -52,8 +52,8 @@ docker run -d \
   --restart unless-stopped \
   --stop-timeout 90 \
   -p 127.0.0.1:8000:8000 \
+  -p 19132:19132/tcp \
   -p 19132:19132/udp \
-  -p 19133:19133/udp \
   -v montainer_worlds:/app/instance/worlds \
   -v montainer_configs:/app/configs \
   -v montainer_resource_packs:/app/resource_packs \
@@ -62,6 +62,18 @@ docker run -d \
 ```
 
 Use `ghcr.io/wasinuddy/montainer-preview:latest` for the Bedrock Preview channel.
+
+Current Bedrock releases use NetherNet: TCP port `19132` handles HTTP signaling and UDP port `19132` carries negotiated WebRTC gameplay. Publish and forward both protocols. NetherNet uses one dual-stack signaling listener; `server-portv6` is ignored.
+
+For an existing configuration volume, update `/app/configs/server.properties` and restart Bedrock:
+
+```properties
+transport=nethernet
+server-port=19132
+server-udp-ports=19132
+```
+
+Keep `online-mode` and `allow-list` at the values appropriate for your server. `server-udp-ports` must match the published gameplay port; leaving it empty allocates ephemeral UDP ports. With a different external port or NAT address, use Mojang's `public:local` or `IP:public:local` mapping syntax in that property (for example, `203.0.113.10:29132:19132` with your own public IP). The bundled `bedrock_server_how_to.html` describes the complete mapping syntax. TLS can be terminated by a reverse proxy in front of the signaling endpoint.
 
 Use `ghcr.io/wasinuddy/montainer-stable:<minecraft-version>` or `ghcr.io/wasinuddy/montainer-preview:<minecraft-version>` to stay on a specific Bedrock binary while receiving newly accepted Montainer rebuilds. These Minecraft-version tags are intentionally overwritten after the full acceptance matrix passes. For a completely immutable deployment, use the `:<minecraft-version>@sha256:<digest>` reference published in the matching GitHub release.
 
@@ -334,7 +346,7 @@ GODOG_TAGS='@otel' go test -v -count=1 ./acceptance
 
 See [acceptance/README.md](acceptance/README.md) for binary overrides, temporary-workspace diagnostics, and the covered business behavior.
 
-A separate Docker acceptance suite exercises an already-built image with its packaged Mojang binary. It creates an isolated network and container stack per scenario and covers exact-version startup, RakNet discovery, concurrent lifecycle requests, OTLP export (`@otel-export`), Collector outage isolation (`@otel-outage`), shutdown flushing (`@otel-flush`), concurrent RustFS backups, ZIP integrity, and post-backup gameplay readiness. Its stable-only upgrade shard creates logical scoreboard state with the digest-pinned pre-v3 image, reuses that image's root-owned volumes under the candidate, joins that upgraded world with a virtual player, downloads the S3 backup, restores it externally into fresh named volumes, and queries the same scoreboard state from that restored world. Separate scenarios cover a root-owned custom `INSTANCE_DIR`, literal same-device nested-mount pruning, and the runtime-hardened explicit non-root profile including its Docker health probe. Stable releases also launch an offline virtual Bedrock player that must spawn, appear in the server player list, and receive a teleport movement packet.
+A separate Docker acceptance suite exercises an already-built image with its packaged Mojang binary. It creates an isolated network and container stack per scenario and covers exact-version startup, NetherNet HTTP discovery, concurrent lifecycle requests, OTLP export (`@otel-export`), Collector outage isolation (`@otel-outage`), shutdown flushing (`@otel-flush`), concurrent RustFS backups, ZIP integrity, and post-backup gameplay readiness. Its stable-only upgrade shard creates logical scoreboard state with the digest-pinned pre-v3 image, reuses that image's root-owned volumes under the candidate, joins that upgraded world with a virtual player, downloads the S3 backup, restores it externally into fresh named volumes, and queries the same scoreboard state from that restored world. Separate scenarios cover a root-owned custom `INSTANCE_DIR`, literal same-device nested-mount pruning, and the runtime-hardened explicit non-root profile including its Docker health probe. Stable releases also launch an offline virtual Bedrock player that must spawn, appear in the server player list, and receive a teleport movement packet.
 
 ```bash
 GODOG_TAGS='@smoke' \
@@ -361,7 +373,7 @@ The scraper records each channel's version, exact Mojang URL, and archive SHA-25
 
 CI is one connected, numbered DAG. Stage 0 plans the affected release channels while Stage 1 runs a six-row quality matrix: frontend, Go/race/vet/actionlint, and four fake-Bedrock business groups. A main push reuses that matrix once rather than repeating it inside separate stable and preview workflows. Stable-only metadata changes select stable, preview-only metadata changes select preview, and common runtime changes select both. Selective routing is trusted only when the previous commit completed this delivery pipeline successfully; otherwise both channels run.
 
-Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to eight stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stable additionally upgrades a real root-owned legacy world and backs it up before promotion. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact, current Minecraft-version manifest, and recorded digest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 26 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent RakNet gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
+Stages 2 and 3 build each selected Mojang-backed image once, record a channel-specific archive SHA-256 and image ID, and fan that exact artifact out to eight stable or six preview real-image runners. Every runner verifies both identities before loading the image. Stable additionally upgrades a real root-owned legacy world and backs it up before promotion. Stage 4 gives package-write permission only to the selected channel's promotion job after its matrix succeeds. Stable promotion connects directly to Stage 5, which validates the same-run identity artifact, current Minecraft-version manifest, and recorded digest before considering the latest changelog version for an idempotent GitHub release. All planning, quality, build, and acceptance jobs remain read-only. A common main-branch change now schedules 26 runner jobs including release instead of 36, while PR validation remains six concurrent quality jobs. Manual dispatch can select `stable`, `preview`, or `both`, defaults to validation-only, and may publish only with an explicit opt-in on `main`. Preview keeps the protocol-independent NetherNet discovery gate because third-party full-client libraries may temporarily lag Mojang preview protocols.
 
 ```mermaid
 flowchart LR

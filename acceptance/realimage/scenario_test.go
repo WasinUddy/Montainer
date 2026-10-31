@@ -38,19 +38,19 @@ type backupResult struct {
 type scenarioState struct {
 	suite *suiteHarness
 
-	tmpDir      string
-	configDir   string
-	networkName string
-	containers  []string
-	volumes     []string
-	candidate   string
-	collector   string
-	rustfs      string
-	client      string
-	baseURL     string
-	udpAddress  string
-	env         map[string]string
-	httpClient  *http.Client
+	tmpDir       string
+	configDir    string
+	networkName  string
+	containers   []string
+	volumes      []string
+	candidate    string
+	collector    string
+	rustfs       string
+	client       string
+	baseURL      string
+	signalingURL string
+	env          map[string]string
+	httpClient   *http.Client
 
 	rustfsEndpoint string
 	rustfsBucket   string
@@ -86,8 +86,8 @@ func (s *scenarioState) initializeScenario(ctx *godog.ScenarioContext) {
 	ctx.Step(`^the packaged Bedrock server eventually reports running$`, s.serverEventuallyRunning)
 	ctx.Step(`^the packaged Bedrock server eventually reports stopped$`, s.serverEventuallyStopped)
 	ctx.Step(`^the local logs contain the expected Bedrock version$`, s.logsContainExpectedVersion)
-	ctx.Step(`^a RakNet client can discover the Bedrock server$`, s.rakNetEventuallyResponds)
-	ctx.Step(`^a RakNet client can eventually discover the Bedrock server$`, s.rakNetEventuallyResponds)
+	ctx.Step(`^a NetherNet client can discover the Bedrock server$`, s.netherNetEventuallyResponds)
+	ctx.Step(`^a NetherNet client can eventually discover the Bedrock server$`, s.netherNetEventuallyResponds)
 	ctx.Step(`^I send the real server command "([^"]*)"$`, s.sendCommand)
 	ctx.Step(`^the local logs eventually contain "([^"]*)"$`, s.logsEventuallyContain)
 	ctx.Step(`^I request (\d+) stops concurrently$`, s.requestStopsConcurrently)
@@ -153,7 +153,7 @@ func (s *scenarioState) prepare() error {
 	s.rustfs = ""
 	s.client = ""
 	s.baseURL = ""
-	s.udpAddress = ""
+	s.signalingURL = ""
 	s.httpClient = &http.Client{Timeout: 90 * time.Second}
 	s.rustfsEndpoint = ""
 	s.rustfsBucket = "montainer-real-image"
@@ -199,6 +199,8 @@ func (s *scenarioState) prepare() error {
 			"max-players=4",
 			"online-mode=false",
 			"allow-list=false",
+			"transport=nethernet",
+			"server-udp-ports=19132",
 			"server-port=19132",
 			"server-portv6=19133",
 			"enable-lan-visibility=true",
@@ -261,6 +263,11 @@ func (s *scenarioState) cleanup() error {
 }
 
 func (s *scenarioState) printDiagnostics() {
+	if s.candidate != "" {
+		if logs, err := s.currentLogs(); err == nil {
+			fmt.Fprintf(os.Stderr, "--- packaged Bedrock output ---\n%s\n", logs)
+		}
+	}
 	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
 	defer cancel()
 	for _, container := range s.containers {

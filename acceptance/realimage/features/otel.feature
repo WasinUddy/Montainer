@@ -9,7 +9,7 @@ Feature: Export real Bedrock logs through an OpenTelemetry Collector
     Given the candidate Montainer image is available
     And a real OpenTelemetry Collector is available
     When I start the candidate with the packaged Bedrock server
-    Then a RakNet client can eventually discover the Bedrock server
+    Then a NetherNet client can eventually discover the Bedrock server
     When I send the real server command "real-image-otel-token"
     Then the local logs eventually contain "real-image-otel-token"
     And the Collector eventually contains "real-image-otel-token"
@@ -20,12 +20,12 @@ Feature: Export real Bedrock logs through an OpenTelemetry Collector
     Given the candidate Montainer image is available
     And the configured OpenTelemetry Collector is unavailable
     When I start the candidate with the packaged Bedrock server
-    Then a RakNet client can eventually discover the Bedrock server
+    Then a NetherNet client can eventually discover the Bedrock server
     When I send the real server command "real-image-otel-outage-token"
     Then the local logs eventually contain "real-image-otel-outage-token"
     And the management API remains healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
 
   @otel-flush
   Scenario: Graceful container shutdown flushes pending real server logs
@@ -33,7 +33,7 @@ Feature: Export real Bedrock logs through an OpenTelemetry Collector
     And a real OpenTelemetry Collector is available
     And log export batching is delayed until shutdown
     When I start the candidate with the packaged Bedrock server
-    Then a RakNet client can eventually discover the Bedrock server
+    Then a NetherNet client can eventually discover the Bedrock server
     When I send the real server command "real-image-shutdown-flush-token"
     Then the local logs eventually contain "real-image-shutdown-flush-token"
     When I stop the candidate container

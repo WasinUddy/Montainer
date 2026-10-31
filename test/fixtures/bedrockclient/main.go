@@ -13,19 +13,17 @@ import (
 	"net"
 	"os"
 	"os/signal"
-	"strconv"
-	"strings"
 	"syscall"
 	"time"
 
-	"github.com/sandertv/go-raknet"
+	"github.com/df-mc/go-nethernet/endpoint"
 	"github.com/sandertv/gophertunnel/minecraft"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/login"
 	"github.com/sandertv/gophertunnel/minecraft/protocol/packet"
 )
 
 func main() {
-	address := flag.String("address", "montainer:19132", "Bedrock server address")
+	address := flag.String("address", "http://montainer:19132", "NetherNet HTTP/HTTPS signaling URL")
 	username := flag.String("username", "MontainerCI", "offline player name")
 	chat := flag.String("chat", "", "optional chat message sent after spawning")
 	waitForTeleport := flag.Bool("wait-teleport", false, "wait for a server-side player teleport")
@@ -61,7 +59,10 @@ func main() {
 		DisconnectOnInvalidPackets: true,
 		DisconnectOnUnknownPackets: false,
 	}
-	connection, err := dialer.DialContext(ctx, "raknet", *address)
+	// Gophertunnel signs the offline WebRTC assertion with the same key used
+	// by the game login. No Microsoft/Xbox credentials or token service is used.
+	network := minecraft.NetherNet{Signaling: endpoint.NewClient()}
+	connection, err := dialer.DialContextNetwork(ctx, network, *address)
 	if err != nil {
 		log.Fatalf("dial Bedrock: %v", err)
 	}
@@ -139,17 +140,12 @@ func main() {
 }
 
 func pingServer(ctx context.Context, address string) (version string, protocolID int32, err error) {
-	advertisement, err := raknet.PingContext(ctx, address)
+	status, err := endpoint.NewClient().Status(ctx, address)
 	if err != nil {
 		return "", 0, err
 	}
-	fields := strings.Split(string(advertisement), ";")
-	if len(fields) < 4 || fields[0] != "MCPE" {
-		return "", 0, fmt.Errorf("unexpected Bedrock advertisement %q", advertisement)
+	if status.Protocol <= 0 || status.Version == "" {
+		return "", 0, fmt.Errorf("incomplete NetherNet status: %+v", status)
 	}
-	parsed, err := strconv.ParseInt(fields[2], 10, 32)
-	if err != nil {
-		return "", 0, fmt.Errorf("parse advertised protocol %q: %w", fields[2], err)
-	}
-	return fields[3], int32(parsed), nil
+	return status.Version, int32(status.Protocol), nil
 }

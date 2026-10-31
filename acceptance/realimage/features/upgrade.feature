@@ -11,7 +11,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
     And the persistence data still belongs to UID and GID 0
     And Montainer PID 1 and Bedrock run as UID 0 and GID 0
@@ -25,13 +25,13 @@ Feature: Run an existing Bedrock world under any ownership
     And the uploaded backup is a valid Montainer archive
     And the uploaded backup retains the legacy world database and canary
     And the process generation increases by 1
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
     And the candidate reports no filesystem permission errors
     When I restore the uploaded backup into fresh named volumes
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
     And the candidate reports no filesystem permission errors
     When I stop the candidate container
@@ -43,7 +43,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
     And the persistence data still belongs to UID and GID 1234
     And Montainer PID 1 and Bedrock run as UID 1234 and GID 1234
@@ -59,7 +59,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the legacy scoreboard state is preserved
     And the persistence data belongs to UID 1500 and GID 1600
     And Montainer PID 1 and Bedrock run as UID 1500 and GID 1600
@@ -71,7 +71,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And Montainer PID 1 and Bedrock run as UID 0 and GID 0
     And the candidate reports no filesystem permission errors
 
@@ -81,7 +81,7 @@ Feature: Run an existing Bedrock world under any ownership
     When I start the candidate with the packaged Bedrock server
     Then the management API eventually becomes healthy
     And the packaged Bedrock server eventually reports running
-    And a RakNet client can eventually discover the Bedrock server
+    And a NetherNet client can eventually discover the Bedrock server
     And the candidate container eventually becomes healthy
     And Montainer PID 1 and Bedrock run as UID 10001 and GID 10001
     And the candidate reports no filesystem permission errors

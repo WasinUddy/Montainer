@@ -81,6 +81,7 @@ jobs:
           ./internal/...
           ./test/fixtures/fakebedrock
           ./test/fixtures/raknetprobe
+          ./acceptance/realimage
 
       - name: Vet Go backend and test harnesses
         if: matrix.runtime == 'go'
@@ -91,6 +92,13 @@ jobs:
           ./acceptance/...
           ./test/fixtures/fakebedrock
           ./test/fixtures/raknetprobe
+
+      - name: Test and vet the NetherNet virtual player
+        if: matrix.runtime == 'go'
+        working-directory: test/fixtures/bedrockclient
+        run: |
+          go test -race -count=1 ./...
+          go vet ./...
 
       - name: Validate GitHub Actions workflows and image tag contract
         if: matrix.runtime == 'go'
