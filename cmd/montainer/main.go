@@ -90,9 +90,17 @@ func run() error {
 	if err != nil {
 		return fmt.Errorf("configure Bedrock filesystem: %w", err)
 	}
+	var bedrockEnvironment []string
+	if preload := strings.TrimSpace(os.Getenv("BEDROCK_LD_PRELOAD")); preload != "" {
+		// Apply the container's socket compatibility library only to Bedrock.
+		// Preserve any operator-provided libraries after it in the loader list.
+		preload = strings.TrimSpace(preload + " " + os.Getenv("LD_PRELOAD"))
+		bedrockEnvironment = []string{"LD_PRELOAD=" + preload}
+	}
 	supervisor, err := bedrock.NewSupervisor(bedrock.SupervisorConfig{
 		Executable:       cfg.BedrockServerPath,
 		WorkingDir:       cfg.InstanceDir,
+		Environment:      bedrockEnvironment,
 		ShutdownTimeout:  cfg.ShutdownTimeout,
 		LifecycleTimeout: cfg.LifecycleTimeout,
 		Publisher:        hub,

@@ -73,6 +73,10 @@ jobs:
           npm test
           npm run build
 
+      - name: Verify Bedrock TCP socket compatibility
+        if: matrix.runtime == 'go'
+        run: sh scripts/build-bedrock-compat.sh /tmp/montainer-compat
+
       - name: Test Go packages with the race detector
         if: matrix.runtime == 'go'
         run: >-
