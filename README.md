@@ -158,6 +158,8 @@ Only `http/protobuf` log export is currently supported. `OTEL_EXPORTER_OTLP_LOGS
 
 Before each start, persistent configuration is copied into the Bedrock instance. On first run, packaged defaults are copied out to the configuration volume. Configuration is persisted again only after the child process has been reaped.
 
+The container enables TCP address reuse in the Bedrock child so NetherNet signaling can bind again immediately after a graceful stop, including when old HTTP connections are still in `TIME_WAIT`. This compatibility library does not enable port sharing between active listeners and leaves UDP sockets unchanged. It is built from `compat/bedrock_socket_reuse.c`; both the image build and CI verify rapid rebinds, rejection of a competing listener, and unchanged UDP behavior.
+
 Montainer and Bedrock run as whoever already owns the world data. On startup the Docker entrypoint reads the ownership of `INSTANCE_DIR/worlds`, adopts that UID and GID for both processes, and then drops its groups and capabilities before starting Montainer. Nothing about the identity is baked into the image, so upgrading an existing server does not change what its files must look like: a world written by a pre-v3 root container keeps running as root, and a bind mount owned by an ordinary host account keeps running as that account. Existing world data is never rewritten.
 
 Adopting the data's identity means a server whose files are root-owned runs as root, exactly as it did before v3. Bedrock parses untrusted traffic from the internet, so moving it off root is worth doing; set `PUID` and `PGID` to choose the identity explicitly, and new deployments should set them from the start:
@@ -228,6 +230,7 @@ Use a container or Kubernetes termination grace period of at least `90s` with th
 | `SUBPATH_URL` | Optional URL prefix, normalized with leading and trailing `/`. | `/` |
 | `INSTANCE_NAME` | Instance label and OTEL `service.instance.id`. | `Montainer` |
 | `BEDROCK_SERVER_PATH` | Bedrock executable path. | `./bedrock_server` |
+| `BEDROCK_LD_PRELOAD` | Optional compatibility libraries loaded only by the Bedrock child. Set to an empty string to disable the container's TCP address-reuse fix. | `/usr/local/lib/montainer/bedrock-socket-reuse.so` in Docker; unset for a native Go launch. |
 | `INSTANCE_DIR` | Bedrock working directory. | `./instance` (`/app/instance` in Docker) |
 | `CONFIG_DIR` | Persistent configuration directory. | `./configs` (`/app/configs` in Docker) |
 | `RESOURCE_PACKS_DIR` | Persistent resource-pack source. | `./resource_packs` (`/app/resource_packs` in Docker) |

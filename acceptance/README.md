@@ -86,3 +86,7 @@ The connected delivery workflow uses numbered stages and matrices:
 6. `5 · Release` is connected directly to stable promotion. It validates the same-run identity and current version-tag manifest, records a digest-pinned image reference, then creates only an unreleased changelog version; existing tag/release pairs are a clean no-op and interrupted same-commit releases are retryable.
 
 Planning, quality, build, and acceptance jobs have read-only repository permissions. No release image is built separately from the artifact exercised by acceptance tests. Channel and run-attempt names prevent stable/preview or rerun artifact collisions, while failed-job reruns reuse the successful build's recorded artifact. Manual dispatch can select `stable`, `preview`, or `both`; it defaults to validation-only and leaves release tags unchanged unless a maintainer explicitly enables `publish` on `main`.
+
+## Bedrock socket compatibility
+
+On Linux, `sh scripts/build-bedrock-compat.sh /tmp/montainer-compat` compiles and tests the container's TCP address-reuse library. It first reproduces a blocked rebind without the library, then verifies IPv4/IPv6 recovery with the library, rejection of a second active listener, unchanged UDP sockets, and preservation of socket errors. The existing real-image lifecycle, backup, and upgrade scenarios remain required release gates.

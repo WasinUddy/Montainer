@@ -19,6 +19,15 @@ COPY cmd/ ./cmd/
 COPY internal/ ./internal/
 RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 go build -trimpath -ldflags="-s -w" -o /out/montainer ./cmd/montainer
 
+FROM --platform=linux/amd64 debian:bookworm-slim AS bedrock-compat
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends gcc libc6-dev \
+    && rm -rf /var/lib/apt/lists/*
+WORKDIR /src
+COPY compat/ ./compat/
+COPY scripts/build-bedrock-compat.sh ./scripts/build-bedrock-compat.sh
+RUN sh scripts/build-bedrock-compat.sh /out
+
 FROM --platform=linux/amd64 debian:bookworm-slim AS bedrock
 ARG SERVER_TYPE=stable
 ARG BEDROCK_VERSION
@@ -70,12 +79,14 @@ RUN mkdir -p /app/instance/worlds /app/configs /app/resource_packs /app/logs /ap
 COPY --from=bedrock --chown=montainer:montainer /out/ /app/instance/
 COPY --from=frontend --chown=montainer:montainer /src/web/dist/ /app/dist/
 COPY --from=go-builder --chown=montainer:montainer /out/montainer /app/montainer
+COPY --from=bedrock-compat /out/bedrock-socket-reuse.so /usr/local/lib/montainer/bedrock-socket-reuse.so
 COPY --chown=root:root scripts/docker-entrypoint.sh /usr/local/bin/montainer-entrypoint
 RUN chmod 0755 /usr/local/bin/montainer-entrypoint
 
 ENV LISTEN_ADDR=:8000 \
     GIN_MODE=release \
     BEDROCK_SERVER_PATH=./bedrock_server \
+    BEDROCK_LD_PRELOAD=/usr/local/lib/montainer/bedrock-socket-reuse.so \
     INSTANCE_DIR=/app/instance \
     CONFIG_DIR=/app/configs \
     RESOURCE_PACKS_DIR=/app/resource_packs \
