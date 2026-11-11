@@ -145,7 +145,10 @@ jobs:
           version_manifest="$(docker buildx imagetools inspect --raw "$version_tag")"
           version_image_id="$(jq --raw-output '.config.digest // empty' <<< "$version_manifest")"
           version_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$version_tag")"
-          if [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] || [[ ! "$version_digest" =~ ^sha256:[0-9a-f]{64}$ ]]; then
+          # Classic Docker reports the config digest as .Id; containerd reports the manifest digest.
+          if [[ ! "$version_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+             [[ ! "$version_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+             { [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] && [ "$version_digest" != "$EXPECTED_IMAGE_ID" ]; }; then
             echo "Invalid Minecraft-version image identity: image=$version_image_id digest=$version_digest" >&2
             exit 1
           fi
@@ -173,8 +176,10 @@ jobs:
           version_image_id="$(jq --raw-output '.config.digest // empty' <<< "$version_manifest")"
           latest_image_id="$(jq --raw-output '.config.digest // empty' <<< "$latest_manifest")"
           if [ "$version_digest" != "$latest_digest" ] || \
-             [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] || \
-             [ "$latest_image_id" != "$EXPECTED_IMAGE_ID" ]; then
+             [[ ! "$version_digest" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+             [[ ! "$version_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+             [ "$version_image_id" != "$latest_image_id" ] || \
+             { [ "$version_image_id" != "$EXPECTED_IMAGE_ID" ] && [ "$version_digest" != "$EXPECTED_IMAGE_ID" ]; }; then
             echo "Promotion mismatch: expected_image=$EXPECTED_IMAGE_ID version=$version_image_id@$version_digest latest=$latest_image_id@$latest_digest" >&2
             exit 1
           fi

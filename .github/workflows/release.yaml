@@ -284,7 +284,10 @@ jobs:
           current_manifest="$(docker buildx imagetools inspect --raw "$TESTED_IMAGE_TAG")"
           current_image_id="$(jq --raw-output '.config.digest // empty' <<< "$current_manifest")"
           current_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "$TESTED_IMAGE_TAG")"
-          if [ "$current_image_id" != "$RECORDED_IMAGE_ID" ] || [ "$current_digest" != "$TESTED_IMAGE_DIGEST" ]; then
+          # Accept the config ID from classic Docker or the manifest ID from containerd.
+          if [ "$current_digest" != "$TESTED_IMAGE_DIGEST" ] || \
+             [[ ! "$current_image_id" =~ ^sha256:[0-9a-f]{64}$ ]] || \
+             { [ "$current_image_id" != "$RECORDED_IMAGE_ID" ] && [ "$current_digest" != "$RECORDED_IMAGE_ID" ]; }; then
             echo "Promoted image changed after acceptance: recorded=$RECORDED_IMAGE_ID@$TESTED_IMAGE_DIGEST current=$current_image_id@$current_digest" >&2
             exit 1
           fi
