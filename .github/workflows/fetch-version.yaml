@@ -34,7 +34,7 @@ jobs:
 
       - name: Install scraper dependencies
         run: |
-          python -m pip install 'playwright==1.55.0' 'playwright-stealth==2.0.0'
+          python -m pip install 'playwright==1.65.0' 'playwright-stealth==2.0.0'
           python -m playwright install --with-deps chromium
 
       - name: Fetch Minecraft server metadata
